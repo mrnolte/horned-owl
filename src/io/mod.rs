@@ -339,6 +339,14 @@ fn sparql_directive(line: &str, keyword: &str) -> bool {
         .is_some_and(char::is_whitespace)
 }
 
+/// A language tag as every reader gives it: in lower case. Tags are
+/// case-insensitive (BCP 47); the RDF readers get them in lower case from oxrdf,
+/// so the other readers lower them too, and the same ontology reads the same in
+/// every syntax (horned-owl#345).
+pub(crate) fn language_tag(tag: &str) -> String {
+    tag.to_ascii_lowercase()
+}
+
 /// Detect the serialization format of an OWL document from its content.
 ///
 /// The detection logic is adapted from
