@@ -2533,7 +2533,23 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         Ok(())
     }
 
-    fn simple_annotations(&mut self, parse_all: bool) -> Result<(), HornedError> {
+    /// Whether `ap` is declared as an annotation property in this ontology or
+    /// its import closure `ic` (Mapping to RDF Graphs, section 3.1.1; #332).
+    fn is_declared_annotation_property(
+        &self,
+        ap: &IRI<A>,
+        ic: &[&DeclarationMappedIndex<A, AA>],
+    ) -> bool {
+        std::iter::once(<O as AsRef<DeclarationMappedIndex<A, AA>>>::as_ref(&self.o))
+            .chain(ic.iter().copied())
+            .any(|d| d.is_annotation_property(ap))
+    }
+
+    fn simple_annotations(
+        &mut self,
+        parse_all: bool,
+        ic: &[&DeclarationMappedIndex<A, AA>],
+    ) -> Result<(), HornedError> {
         let ont_id = <O as AsRef<SetIndex<A, AA>>>::as_ref(&self.o).the_ontology_id_or_default();
         for t in std::mem::take(&mut self.simple) {
             let firi =
@@ -2563,8 +2579,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 }
                 [Term::Iri(iri), Term::Iri(ap), _]
                     if parse_all
-                        || <O as AsRef<DeclarationMappedIndex<A, AA>>>::as_ref(&self.o)
-                            .is_annotation_property(ap)
+                        || self.is_declared_annotation_property(ap, ic)
                         || is_annotation_builtin(ap.as_ref()) =>
                 {
                     firi(self, t.triple(), iri)?
@@ -2596,8 +2611,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 }
                 [triple @ [Term::BNode(ind), Term::Iri(ap), _]]
                     if parse_all
-                        || <O as AsRef<DeclarationMappedIndex<A, AA>>>::as_ref(&self.o)
-                            .is_annotation_property(ap)
+                        || self.is_declared_annotation_property(ap, ic)
                         || is_annotation_builtin(ap) =>
                 {
                     fbnode(self, triple, ind)?
@@ -2709,7 +2723,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         ic: &[&DeclarationMappedIndex<A, AA>],
     ) -> Result<(), HornedError> {
         // Table 10
-        self.simple_annotations(false)?;
+        self.simple_annotations(false, ic)?;
 
         self.data_ranges()?;
 
@@ -2726,7 +2740,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         self.swrl()?;
 
         if self.config.lax {
-            self.simple_annotations(true)?;
+            self.simple_annotations(true, ic)?;
         }
         self.state = OntologyParserState::Parse;
         Ok(())
@@ -3122,6 +3136,47 @@ mod test {
 
         let (_rdfont, incomplete) = p.as_ontology_and_incomplete();
         assert!(incomplete.is_complete());
+        Ok(())
+    }
+
+    /// An annotation assertion whose property is declared only in the import
+    /// closure is read (#332).
+    #[test]
+    fn annotation_property_declared_in_import() -> Result<(), HornedError> {
+        let vocab = "@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix ex: <http://example.org/vocab#> .
+<http://example.org/vocab> a owl:Ontology .
+ex:note a owl:AnnotationProperty .
+";
+        let main = "@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix ex: <http://example.org/vocab#> .
+<http://example.org/main> a owl:Ontology ;
+    owl:imports <http://example.org/vocab> .
+<http://example.org/main#A> a owl:Class ;
+    ex:note \"A note.\" .
+";
+        let b = Build::new_rc();
+        let config = || {
+            let mut config: RDFParserConfiguration<RcStr, &Build<RcStr>> =
+                ParserConfiguration::new(&b).into();
+            config.format = Some(oxrdfio::RdfFormat::Turtle);
+            config
+        };
+        let p: OntologyParser<_, Rc<AnnotatedComponent<RcStr>>, ConcreteRDFOntology<_, _>, _> =
+            parser_with_build(&mut vocab.as_bytes(), config())?;
+        let (vocab, _) = p.parse()?;
+
+        let mut p: OntologyParser<_, Rc<AnnotatedComponent<RcStr>>, ConcreteRDFOntology<_, _>, _> =
+            parser_with_build(&mut main.as_bytes(), config())?;
+        p.parse_imports()?;
+        p.parse_declarations()?;
+        p.finish_parse(
+            vec![<_ as AsRef<DeclarationMappedIndex<_, _>>>::as_ref(&vocab)].as_slice(),
+        )?;
+        let (ont, incomplete) = p.as_ontology_and_incomplete();
+        assert!(incomplete.is_complete(), "{incomplete:?}");
+        let ont: ComponentMappedOntology<_, _> = ont.into();
+        assert_eq!(ont.i().annotation_assertion().count(), 1);
         Ok(())
     }
 
