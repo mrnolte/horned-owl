@@ -25,7 +25,6 @@ use crate::{
     vocab::RDFS as VRDFS,
 };
 
-use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -442,7 +441,7 @@ pub struct IncompleteParse<A: ForIRI> {
 
     /// Annotations that are otherwise unconnected to other parts of
     /// the Ontology
-    pub ann_map: HashMap<[Term<A>; 3], BTreeSet<Annotation<A>>>,
+    pub ann_map: HashMap<[Term<A>; 3], AnnotationSet<A>>,
 }
 
 // Not derived, as that would require `A: Default`
@@ -583,7 +582,7 @@ pub struct OntologyParser<
     // a restriction shared by two rdf:List members) -- see #254.
     used_bnode: HashSet<BNode<A>>,
     // Annotations mapped to Triples
-    ann_map: HashMap<[Term<A>; 3], BTreeSet<Annotation<A>>>,
+    ann_map: HashMap<[Term<A>; 3], AnnotationSet<A>>,
     atom: HashMap<Term<A>, Atom<A>>,
     variable: HashMap<IRI<A>, Variable<A>>,
 
@@ -776,7 +775,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                     v.push(imp.clone());
                     self.merge(AnnotatedComponent {
                         component: Import(imp).into(),
-                        ann: BTreeSet::new(),
+                        ann: AnnotationSet::new(),
                     });
                 }
                 _ => self.simple.push(t),
@@ -880,11 +879,8 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         self.simple.extend(new_triples);
     }
 
-    fn parse_annotations(
-        &self,
-        triples: &[[Term<A>; 3]],
-    ) -> Result<BTreeSet<Annotation<A>>, HornedError> {
-        let mut ann = BTreeSet::default();
+    fn parse_annotations(&self, triples: &[[Term<A>; 3]]) -> Result<AnnotationSet<A>, HornedError> {
+        let mut ann = AnnotationSet::default();
         for a in triples {
             ann.insert(self.annotation(a)?);
         }
@@ -1984,7 +1980,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             match axiom? {
                 Some(axiom) => self.merge(AnnotatedComponent {
                     component: axiom,
-                    ann: BTreeSet::new(),
+                    ann: AnnotationSet::new(),
                 }),
                 _ => {
                     if v.len() == 1 {
