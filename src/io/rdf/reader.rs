@@ -2011,9 +2011,11 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 // TODO: We need to check whether these
                 // EquivalentClasses have any other EquivalentClasses
                 // and add to that axiom
+                // An undeclared subject is taken for a class, as for
+                // rdfs:subClassOf (#339).
                 [a, Term::OWL(VOWL::EquivalentClass), b] => match self.distinguish_term_kind(a, ic)
                 {
-                    Some(NamedOWLEntityKind::Class) => ok_some! {
+                    Some(NamedOWLEntityKind::Class) | None => ok_some! {
                         EquivalentClasses(
                             vec![
                                 self.retrieve_to_ce(a)?,
@@ -2035,13 +2037,10 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                             ))
                         }
                     }
-                    _ => Err(HornedError::invalid_at(
-                        format!(
-                            "Unknown entity in equivalent class statement: {:?}",
-                            t.triple()
-                        ),
-                        t.position(),
-                    )),
+                    // Neither a class nor a datatype: the triple stays
+                    // unread (IncompleteParse) instead of failing the
+                    // whole document.
+                    _ => Ok(None),
                 },
                 [class, Term::OWL(VOWL::HasKey), Term::BNode(bnodeid)] => {
                     ok_some! {
@@ -3123,6 +3122,38 @@ mod test {
         let (_rdfont, incomplete) = p.as_ontology_and_incomplete();
         assert!(incomplete.is_complete());
         Ok(())
+    }
+
+    /// `owl:equivalentClass` on an undeclared subject reads as on a class, like
+    /// `rdfs:subClassOf`, and does not fail the document (#339).
+    #[test]
+    fn equivalent_class_on_undeclared_subject() {
+        let head = "@prefix : <http://example.org/equivalent#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+<http://example.org/equivalent> a owl:Ontology .
+:A a owl:Class .
+:red a owl:NamedIndividual .
+:green a owl:NamedIndividual .
+";
+        for body in [
+            ":Colour owl:equivalentClass [ a owl:Class ; owl:oneOf ( :red :green ) ] .
+",
+            ":Colour owl:equivalentClass :A .
+",
+        ] {
+            let text = format!("{head}{body}");
+            let (ont, _): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+                OntologyParser::from_bufread_with_format(
+                    &mut text.as_bytes(),
+                    Default::default(),
+                    oxrdfio::RdfFormat::Turtle,
+                )
+                .unwrap()
+                .parse()
+                .unwrap_or_else(|e| panic!("{text}: {e}"));
+            let ont: ComponentMappedOntology<_, _> = ont.into();
+            assert_eq!(ont.i().equivalent_class().count(), 1, "{text}");
+        }
     }
 
     #[test]
