@@ -1024,6 +1024,29 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         Ok(())
     }
 
+    /// The key in `ann_map` of a reification of the property chain axiom of
+    /// `pr` whose `owl:annotatedTarget` is another list than `id` with the same
+    /// members `seq`: the OWL API writes the target as such a copy (#331). The copy
+    /// is used up.
+    fn chain_copy_key(
+        &mut self,
+        pr: &IRI<A>,
+        id: &BNode<A>,
+        seq: &[Term<A>],
+    ) -> Option<[Term<A>; 3]> {
+        let key = self.ann_map.keys().find(|key| match key {
+            [Term::Iri(s), Term::OWL(VOWL::PropertyChainAxiom), Term::BNode(other)] => {
+                s == pr && other != id && self.bnode_seq.get(other).map(Vec::as_slice) == Some(seq)
+            }
+            _ => false,
+        })?;
+        let key = key.clone();
+        if let [_, _, Term::BNode(other)] = &key {
+            self.bnode_seq.remove(other);
+        }
+        Some(key)
+    }
+
     /// Process named entity declaration axioms
     fn declarations(&mut self) {
         // Table 7
@@ -2039,6 +2062,9 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             .into_iter()
             .chain(single_bnodes.into_iter().map(|t| t.into()))
         {
+            // The reification key of a property chain whose annotatedTarget is a
+            // copy of the list (#331).
+            let mut copy_key = None;
             let axiom: Result<_, HornedError> = match t.triple() {
                 [sub_tce, Term::RDFS(VRDFS::SubClassOf), sup_tce] => ok_some! {
                     SubClassOf {
@@ -2223,11 +2249,14 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                     Term::OWL(VOWL::PropertyChainAxiom),
                     Term::BNode(id),
                 ] => {
+                    let seq = self.bnode_seq.remove(id);
+                    if let Some(seq) = &seq {
+                        copy_key = self.chain_copy_key(pr, id, seq);
+                    }
                     ok_some! {
                         SubObjectPropertyOf {
                             sub: SubObjectPropertyExpression::ObjectPropertyChain(
-                                self.bnode_seq
-                                    .remove(id)?
+                                seq?
                                     .iter()
                                     .map(|t| self.retrieve_to_ope(t).unwrap())
                                     .collect()
@@ -2372,7 +2401,10 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
 
             match axiom? {
                 Some(axiom) => {
-                    let ann = self.ann_map.remove(t.triple()).unwrap_or_default();
+                    let mut ann = self.ann_map.remove(t.triple()).unwrap_or_default();
+                    if let Some(key) = copy_key {
+                        ann.extend(self.ann_map.remove(&key).unwrap_or_default());
+                    }
                     self.merge(AnnotatedComponent {
                         component: axiom,
                         ann,
