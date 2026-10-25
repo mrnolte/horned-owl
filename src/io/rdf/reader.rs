@@ -2090,9 +2090,11 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 // TODO: We need to check whether these
                 // EquivalentClasses have any other EquivalentClasses
                 // and add to that axiom
+                // An undeclared subject is taken for a class, as for
+                // rdfs:subClassOf (#339).
                 [a, Term::OWL(VOWL::EquivalentClass), b] => match self.distinguish_term_kind(a, ic)
                 {
-                    Some(NamedOWLEntityKind::Class) => ok_some! {
+                    Some(NamedOWLEntityKind::Class) | None => ok_some! {
                         EquivalentClasses(
                             vec![
                                 self.retrieve_to_ce(a)?,
@@ -2114,13 +2116,10 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                             ))
                         }
                     }
-                    _ => Err(HornedError::invalid_at(
-                        format!(
-                            "Unknown entity in equivalent class statement: {:?}",
-                            t.triple()
-                        ),
-                        t.position(),
-                    )),
+                    // Neither a class nor a datatype: the triple stays
+                    // unread (IncompleteParse) instead of failing the
+                    // whole document.
+                    _ => Ok(None),
                 },
                 [class, Term::OWL(VOWL::HasKey), Term::BNode(bnodeid)] => {
                     ok_some! {
