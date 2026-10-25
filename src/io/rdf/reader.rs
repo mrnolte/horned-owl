@@ -3469,6 +3469,45 @@ mod test {
         }
     }
 
+    /// An annotation on an ontology annotation, reified as owl:Annotation
+    /// with the ontology IRI as source, is read (#330).
+    #[test]
+    fn annotated_ontology_annotation() {
+        let text = r#"@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<http://example.org/oa> a owl:Ontology ;
+    rdfs:comment "An ontology annotation." .
+[] a owl:Annotation ;
+    owl:annotatedSource <http://example.org/oa> ;
+    owl:annotatedProperty rdfs:comment ;
+    owl:annotatedTarget "An ontology annotation." ;
+    rdfs:label "On the annotation." .
+"#;
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(incomp.is_complete(), "{incomp:?}");
+        let ont: ComponentMappedOntology<RcStr, Rc<AnnotatedComponent<RcStr>>> = ont.into();
+        let annotations: Vec<_> = ont
+            .i()
+            .component_for_kind(ComponentKind::OntologyAnnotation)
+            .collect();
+        assert_eq!(annotations.len(), 1);
+        assert!(annotations[0].ann.is_empty());
+        let Component::OntologyAnnotation(OntologyAnnotation(annotation)) =
+            &annotations[0].component
+        else {
+            panic!("{:?}", annotations[0]);
+        };
+        assert_eq!(annotation.ann.len(), 1);
+    }
+
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
         let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
             OntologyParser::from_bufread_with_format(bufread, Default::default(), format)
