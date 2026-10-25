@@ -31,6 +31,16 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::{io::BufRead, marker::PhantomData};
 
+/// The kinds an IRI can have where only a property stands (`owl:onProperty`, a
+/// property assertion, a pair of properties), in the order they are preferred for a
+/// punned IRI; Object and DataProperty before AnnotationProperty, as the declaration
+/// index does.
+const PROPERTY_KINDS: [NamedOWLEntityKind; 3] = [
+    NamedOWLEntityKind::ObjectProperty,
+    NamedOWLEntityKind::DataProperty,
+    NamedOWLEntityKind::AnnotationProperty,
+];
+
 type OxTerm<'a> = ::oxrdf::Term;
 
 /// Evaluate $body which should return a value while allowing the use
@@ -1382,7 +1392,12 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             Term::Iri(iri) if crate::vocab::is_xsd_datatype(iri) => {
                 Some(NamedOWLEntityKind::Datatype)
             }
-            Term::Iri(iri) => self.distinguish_declaration_kind(iri, ic),
+            // Where a class or a datatype stands, a punned IRI is one.
+            Term::Iri(iri) => self.distinguish_declaration_kind_preferring(
+                iri,
+                ic,
+                &[NamedOWLEntityKind::Class, NamedOWLEntityKind::Datatype],
+            ),
             // TODO: this might be too general. At the moment, I am
             // only using this function to distinguish between a
             // datatype and an class
@@ -1393,20 +1408,33 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
     /// Given an IRI work out its declaration kind, as defined in
     /// either this Ontology or any Ontology in the import closure.
     ///
-    /// If there are multiple contradictory declarations, declarations
-    /// in this Ontology will considered first, but otherwise the
-    /// result is not defined.
-    fn distinguish_declaration_kind(
+    /// An IRI declared as several kinds (punned) is the first of
+    /// `preferred` it is declared as: the kinds that can stand where
+    /// it stands. Otherwise, if there are multiple contradictory
+    /// declarations, declarations in this Ontology will considered
+    /// first, but the result is not defined.
+    fn distinguish_declaration_kind_preferring(
         &mut self,
         iri: &IRI<A>,
         ic: &[&DeclarationMappedIndex<A, AA>],
+        preferred: &[NamedOWLEntityKind],
     ) -> Option<NamedOWLEntityKind> {
         // For this ontology
         std::iter::once(<O as AsRef<DeclarationMappedIndex<A, AA>>>::as_ref(&self.o))
             // and the import closure
             .chain(ic.iter().copied())
             // find the first declaration
-            .find_map(|d| d.declaration_kind(iri))
+            .find_map(|d| d.declaration_kind_preferring(iri, preferred))
+    }
+
+    /// The declaration kind of `iri` where only a property can stand
+    /// (see [`PROPERTY_KINDS`]).
+    fn distinguish_property_declaration_kind(
+        &mut self,
+        iri: &IRI<A>,
+        ic: &[&DeclarationMappedIndex<A, AA>],
+    ) -> Option<NamedOWLEntityKind> {
+        self.distinguish_declaration_kind_preferring(iri, ic, &PROPERTY_KINDS)
     }
 
     /// Distinguish or retrieve the property kind using either a
@@ -1425,7 +1453,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 let iri = self.config.build.as_ref().iri(vowl.as_ref());
                 self.distinguish_retrieve_property_kind(&Term::Iri(iri), ic)
             }
-            Term::Iri(iri) => match self.distinguish_declaration_kind(iri, ic) {
+            Term::Iri(iri) => match self.distinguish_property_declaration_kind(iri, ic) {
                 Some(NamedOWLEntityKind::AnnotationProperty) => {
                     Some(PropertyExpression::AnnotationProperty(iri.into()))
                 }
@@ -1462,7 +1490,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
     ) -> Result<Option<(PropertyExpression<A>, PropertyExpression<A>)>, HornedError> {
         let mut mix_match = |a, b| match (
             Self::get_used(&self.object_property_expression, &mut self.used_bnode, a),
-            self.distinguish_declaration_kind(b, ic),
+            self.distinguish_property_declaration_kind(b, ic),
         ) {
             (Some(ope), Some(NamedOWLEntityKind::ObjectProperty)) | (Some(ope), None) => {
                 Ok(Some((ope.into(), ObjectProperty(b.clone()).into())))
@@ -1516,8 +1544,8 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
     ) -> Result<Option<(PropertyExpression<A>, PropertyExpression<A>)>, HornedError> {
         use crate::model::NamedOWLEntityKind as NEK;
         match (
-            self.distinguish_declaration_kind(a, ic),
-            self.distinguish_declaration_kind(b, ic),
+            self.distinguish_property_declaration_kind(a, ic),
+            self.distinguish_property_declaration_kind(b, ic),
         ) {
             (Some(NEK::ObjectProperty), Some(NEK::ObjectProperty))
             | (Some(NEK::ObjectProperty), None)
@@ -2294,7 +2322,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 [Term::Iri(sub), Term::Iri(pred), t @ Term::Literal(_)] => {
                     if self.config.lax
                         || matches!(
-                            self.distinguish_declaration_kind(pred, ic),
+                            self.distinguish_property_declaration_kind(pred, ic),
                             Some(NamedOWLEntityKind::DataProperty)
                         )
                     {
@@ -2312,7 +2340,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 [Term::Iri(sub), Term::Iri(pred), Term::Iri(obj)] => {
                     if self.config.lax
                         || matches!(
-                            self.distinguish_declaration_kind(pred, ic),
+                            self.distinguish_property_declaration_kind(pred, ic),
                             Some(NamedOWLEntityKind::ObjectProperty)
                         )
                     {
@@ -3367,6 +3395,64 @@ mod test {
             .filter(|c| matches!(c.component, crate::model::Component::DeclareClass(_)))
             .count();
         assert_eq!(n, 1);
+    }
+
+    /// Reads the Turtle `text` completely, or fails.
+    fn read_ttl_ok(text: &str) -> ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>> {
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(incomp.is_complete(), "{incomp:?}");
+        ont
+    }
+
+    const PUN_HEAD: &str = "@prefix : <http://www.example.com/pun#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<http://www.example.com/pun> a owl:Ontology .
+:A a owl:Class .
+:B a owl:Class .
+";
+
+    /// A punned class and object property is a property in a
+    /// restriction, whichever declaration comes last.
+    #[test]
+    fn punned_property_in_restriction_in_either_order() {
+        let property = ":p a owl:ObjectProperty .\n";
+        let class = ":p a owl:Class .\n";
+        let restriction = ":A rdfs:subClassOf [ a owl:Restriction ; \
+                           owl:onProperty :p ; owl:someValuesFrom :B ] .\n";
+        for (property, class) in [(property, class), (class, property)] {
+            let text = format!("{PUN_HEAD}{property}{class}{restriction}");
+            let ont: ComponentMappedOntology<RcStr, Rc<AnnotatedComponent<RcStr>>> =
+                read_ttl_ok(&text).into();
+            assert_eq!(ont.i().sub_class_of().count(), 1, "{text}");
+            assert_eq!(ont.i().declare_class().count(), 3, "{text}");
+            assert_eq!(ont.i().declare_object_property().count(), 1, "{text}");
+        }
+    }
+
+    /// A punned class and object property is a class in an
+    /// equivalent class axiom, whichever declaration comes last
+    /// (horned-owl#341).
+    #[test]
+    fn punned_class_in_equivalent_classes_in_either_order() {
+        let property = ":p a owl:ObjectProperty .\n";
+        let class = ":p a owl:Class ;\n    owl:equivalentClass [ a owl:Class ; \
+                     owl:intersectionOf ( :A :B ) ] .\n";
+        for (first, second) in [(property, class), (class, property)] {
+            let text = format!("{PUN_HEAD}{first}{second}");
+            let ont: ComponentMappedOntology<RcStr, Rc<AnnotatedComponent<RcStr>>> =
+                read_ttl_ok(&text).into();
+            assert_eq!(ont.i().equivalent_class().count(), 1, "{text}");
+            assert_eq!(ont.i().declare_object_property().count(), 1, "{text}");
+        }
     }
 
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
