@@ -2367,6 +2367,46 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                         _ => unreachable!("Unexpected error in equivalent property matching"),
                     }
                 }
+                // OWL 1 DL: Boolean constructors and owl:oneOf on a named
+                // class (Mapping to RDF Graphs, table 18; #343).
+                [
+                    Term::Iri(x),
+                    Term::OWL(
+                        op @ (VOWL::UnionOf
+                        | VOWL::IntersectionOf
+                        | VOWL::ComplementOf
+                        | VOWL::OneOf),
+                    ),
+                    obj,
+                ] if matches!(
+                    self.distinguish_term_kind(&Term::Iri(x.clone()), ic),
+                    Some(NamedOWLEntityKind::Class)
+                ) =>
+                {
+                    ok_some! {
+                        EquivalentClasses(vec![
+                            Class(x.clone()).into(),
+                            match (op, obj) {
+                                (VOWL::UnionOf, Term::BNode(id)) => {
+                                    ClassExpression::ObjectUnionOf(self.retrieve_to_ce_seq(id)?)
+                                }
+                                (VOWL::IntersectionOf, Term::BNode(id)) => {
+                                    ClassExpression::ObjectIntersectionOf(
+                                        self.retrieve_to_ce_seq(id)?,
+                                    )
+                                }
+                                (VOWL::OneOf, Term::BNode(id)) => {
+                                    ClassExpression::ObjectOneOf(self.retrieve_to_ni_seq(id)?)
+                                }
+                                (VOWL::ComplementOf, c) => ClassExpression::ObjectComplementOf(
+                                    Box::new(self.retrieve_to_ce(c)?),
+                                ),
+                                _ => return None,
+                            },
+                        ])
+                        .into()
+                    }
+                }
                 [Term::Iri(sub), Term::OWL(VOWL::SameAs), Term::Iri(obj)] => {
                     Ok(Some(SameIndividual(vec![sub.into(), obj.into()]).into()))
                 }
