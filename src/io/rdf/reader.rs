@@ -3647,6 +3647,43 @@ ex:note a owl:AnnotationProperty .
         assert_eq!(chains[0].ann.len(), 1, "{:?}", chains[0]);
     }
 
+    /// A further rdf:type of an owl:Axiom node does not fail the document: the
+    /// axiom keeps its annotation and the triple is reported as unread (#340).
+    #[test]
+    fn axiom_reification_with_extra_type() {
+        let text = r#"@prefix : <http://example.org/axiom#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<http://example.org/axiom> a owl:Ontology .
+:A a owl:Class .
+:B a owl:Class .
+:Reviewed a owl:Class .
+:A rdfs:subClassOf :B .
+[ a owl:Axiom , :Reviewed ;
+  owl:annotatedSource :A ;
+  owl:annotatedProperty rdfs:subClassOf ;
+  owl:annotatedTarget :B ;
+  rdfs:comment "checked" ] .
+"#;
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(incomp.bnode.len(), 1, "{incomp:?}");
+        let ont: ComponentMappedOntology<_, _> = ont.into();
+        let sub: Vec<_> = ont
+            .i()
+            .component_for_kind(ComponentKind::SubClassOf)
+            .collect();
+        assert_eq!(sub.len(), 1);
+        assert_eq!(sub[0].ann.len(), 1);
+    }
+
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
         let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
             OntologyParser::from_bufread_with_format(bufread, Default::default(), format)
