@@ -633,6 +633,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         config: ParserConfiguration<A, B>,
         format: oxrdfio::RdfFormat,
     ) -> Result<Self, HornedError> {
+        crate::io::skip_bom(bufread)?;
         let mut parser = oxrdfio::RdfParser::from_format(format);
         if config.lax {
             // Accept IRIs that fail RFC 3987 validation, such as the raw

@@ -317,6 +317,19 @@ impl<A: ForIRI, AA: ForIndex<A>> From<ParserOutput<A, AA>> for ComponentMappedOn
     }
 }
 
+/// The UTF-8 byte order mark.
+pub(crate) const BOM: char = '\u{feff}';
+
+/// Consumes a leading UTF-8 byte order mark of `bufread`, if there is one.
+pub(crate) fn skip_bom<R: std::io::BufRead + ?Sized>(bufread: &mut R) -> std::io::Result<()> {
+    let mut bom = [0; 3];
+    BOM.encode_utf8(&mut bom);
+    if bufread.fill_buf()?.starts_with(&bom) {
+        bufread.consume(bom.len());
+    }
+    Ok(())
+}
+
 /// Detect the serialization format of an OWL document from its content.
 ///
 /// The detection logic is adapted from
@@ -328,7 +341,7 @@ impl<A: ForIRI, AA: ForIndex<A>> From<ParserOutput<A, AA>> for ComponentMappedOn
 /// Returns `None` when the format cannot be determined from the content.
 pub fn detect_format(bytes: &[u8]) -> Option<(ResourceType, Option<oxrdfio::RdfFormat>)> {
     let s = String::from_utf8_lossy(bytes);
-    let s = s.strip_prefix('\u{feff}').unwrap_or(&s);
+    let s = s.strip_prefix(BOM).unwrap_or(&s);
     let trimmed = s.trim_start();
 
     if trimmed.starts_with('<') {
@@ -412,6 +425,69 @@ fn first_xml_element(s: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+
+    #[test]
+    fn readers_skip_a_bom() {
+        use crate::io::{ParserConfiguration, RDFParserConfiguration};
+        use crate::model::*;
+        use crate::ontology::set::SetOntology;
+
+        let ofn = "Prefix(:=<http://example.org/bom#>)\nOntology(<http://example.org/bom>\n\
+                   Declaration(Class(:A))\n)\n";
+        let omn =
+            "Prefix: : <http://example.org/bom#>\nOntology: <http://example.org/bom>\nClass: :A\n";
+        let ttl = "@prefix : <http://example.org/bom#> .\n@prefix owl: <http://www.w3.org/2002/07/owl#> .\n\
+                   <http://example.org/bom> a owl:Ontology .\n:A a owl:Class .\n";
+        let rdf = "<?xml version=\"1.0\"?>\n<rdf:RDF \
+                   xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\" \
+                   xmlns:owl=\"http://www.w3.org/2002/07/owl#\">\n\
+                   <owl:Ontology rdf:about=\"http://example.org/bom\"/>\n\
+                   <owl:Class rdf:about=\"http://example.org/bom#A\"/>\n</rdf:RDF>\n";
+        let owx = "<?xml version=\"1.0\"?>\n<Ontology xmlns=\"http://www.w3.org/2002/07/owl#\" \
+                   ontologyIRI=\"http://example.org/bom\">\n\
+                   <Declaration><Class IRI=\"http://example.org/bom#A\"/></Declaration>\n</Ontology>\n";
+
+        let count = |format: &str, text: &str| -> usize {
+            let b = Build::new_rc();
+            let mut r = std::io::Cursor::new(text.as_bytes());
+            let count = match format {
+                "ofn" => crate::io::ofn::reader::read::<RcStr, _, SetOntology<RcStr>, _>(
+                    &mut r,
+                    ParserConfiguration::new(&b),
+                )
+                .map(|(o, _)| o.iter().count()),
+                "omn" => crate::io::omn::reader::read::<RcStr, _, SetOntology<RcStr>, _>(
+                    r,
+                    ParserConfiguration::new(&b),
+                )
+                .map(|(o, _)| o.iter().count()),
+                "owx" => crate::io::owx::reader::read::<RcStr, _, SetOntology<RcStr>, _>(
+                    &mut r,
+                    ParserConfiguration::new(&b),
+                )
+                .map(|(o, _)| o.iter().count()),
+                rdf => {
+                    let mut config: RDFParserConfiguration<RcStr, &Build<RcStr>> =
+                        ParserConfiguration::new(&b).into();
+                    config.format = Some(if rdf == "ttl" {
+                        oxrdfio::RdfFormat::Turtle
+                    } else {
+                        oxrdfio::RdfFormat::RdfXml
+                    });
+                    crate::io::rdf::reader::read::<RcStr, RcAnnotatedComponent, _, _>(
+                        &mut r, config,
+                    )
+                    .map(|(o, _)| o.i().iter().count())
+                }
+            };
+            count.unwrap_or_else(|e| panic!("{format}: {e}"))
+        };
+        for (format, text) in [("ofn", ofn), ("omn", omn), ("ttl", ttl), ("rdf", rdf), ("owx", owx)]
+        {
+            let with_bom = format!("{}{text}", super::BOM);
+            assert_eq!(count(format, &with_bom), count(format, text), "{format}");
+        }
+    }
 
     #[test]
     fn detect_format_rdf_xml() {
