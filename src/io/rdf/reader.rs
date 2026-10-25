@@ -3724,6 +3724,50 @@ ex:note a owl:AnnotationProperty .
         assert_eq!(sub[0].ann.len(), 1);
     }
 
+    /// Boolean constructors and owl:oneOf on a named class (OWL 1 DL) read as
+    /// equivalent classes (Mapping to RDF Graphs, table 18; #343).
+    #[test]
+    fn owl1_named_class_expressions() {
+        let text = r#"@prefix : <http://example.org/owl1#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+<http://example.org/owl1> a owl:Ontology .
+:A a owl:Class .
+:B a owl:Class .
+:i a owl:NamedIndividual .
+:j a owl:NamedIndividual .
+:Union a owl:Class ; owl:unionOf ( :A :B ) .
+:Intersection a owl:Class ; owl:intersectionOf ( :A :B ) .
+:Complement a owl:Class ; owl:complementOf :A .
+:Enumeration a owl:Class ; owl:oneOf ( :i :j ) .
+"#;
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(incomp.is_complete(), "{incomp:?}");
+        let ont: ComponentMappedOntology<_, _> = ont.into();
+        let kinds: Vec<String> = ont
+            .i()
+            .equivalent_class()
+            .map(|e| match &e.0[1] {
+                ClassExpression::ObjectUnionOf(_) => "union",
+                ClassExpression::ObjectIntersectionOf(_) => "intersection",
+                ClassExpression::ObjectComplementOf(_) => "complement",
+                ClassExpression::ObjectOneOf(_) => "one of",
+                _ => "other",
+            })
+            .map(str::to_owned)
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        assert_eq!(kinds, ["complement", "intersection", "one of", "union"]);
+    }
+
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
         let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
             OntologyParser::from_bufread_with_format(bufread, Default::default(), format)
