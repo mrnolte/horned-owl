@@ -12,7 +12,6 @@ use crate::vocab::OWL;
 use crate::vocab::OWL2Datatype;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
 use std::io::BufRead;
 
 use quick_xml::NsReader;
@@ -105,7 +104,7 @@ impl<A: ForIRI, R: BufRead, B: AsRef<Build<A>>> Reader<A, R, B> {
                             let viri = get_iri_value_for(&mut self.r, e, b"versionIRI")?;
                             return Ok(Some(StreamComponent::Component(AnnotatedComponent::new(
                                 OntologyID { iri, viri },
-                                BTreeSet::new(),
+                                AnnotationSet::new(),
                             ))));
                         }
                         b"Prefix" => {
@@ -131,7 +130,7 @@ impl<A: ForIRI, R: BufRead, B: AsRef<Build<A>>> Reader<A, R, B> {
                             let iri = IRI::from_xml(&mut self.r, b"Import")?;
                             return Ok(Some(StreamComponent::Component(AnnotatedComponent::new(
                                 Import(iri),
-                                BTreeSet::new(),
+                                AnnotationSet::new(),
                             ))));
                         }
                         _ => {
@@ -1037,7 +1036,7 @@ from_start! {
 from_start! {
     AnnotatedComponent, r, e,
     {
-        let mut annotation: BTreeSet<Annotation<_>> = BTreeSet::new();
+        let mut annotation: AnnotationSet<_> = AnnotationSet::new();
         let axiom_kind = e.local_name();
         let mut buf = Vec::new();
 
@@ -1339,7 +1338,7 @@ from_xml! {
 
         let mut ap:Option<AnnotationProperty<_>> = None;
         let mut av:Option<AnnotationValue<_>> = None;
-        let mut ann:BTreeSet<Annotation<_>> = BTreeSet::new();
+        let mut ann:AnnotationSet<_> = AnnotationSet::new();
         let mut buf = Vec::new();
 
         loop {

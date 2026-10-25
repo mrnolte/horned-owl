@@ -1,7 +1,6 @@
 use curie::Curie;
 use curie::PrefixMapping;
 use pest::iterators::Pair;
-use std::collections::BTreeSet;
 use std::collections::HashSet;
 
 use crate::error::HornedError;
@@ -972,12 +971,12 @@ impl<A: ForIRI> FromPair<A> for Annotation<A> {
         let mut next = inner.next().unwrap();
         // The annotation entry may itself be annotated (§2.5 `annotationAnnotatedList`);
         // store the nested `Annotations:` in `ann` (OWL 2 annotated annotations).
-        let ann: BTreeSet<Annotation<A>> = if next.as_rule() == Rule::Annotations {
+        let ann: AnnotationSet<A> = if next.as_rule() == Rule::Annotations {
             let nested = parse_annotations(next, ctx)?.into_iter().collect();
             next = inner.next().unwrap();
             nested
         } else {
-            BTreeSet::new()
+            AnnotationSet::new()
         };
         let ap = AnnotationProperty(IRI::from_pair(next, ctx)?);
         let av = AnnotationValue::from_pair(inner.next().unwrap(), ctx)?;
@@ -1146,7 +1145,7 @@ fn clause_keyword(clause: &Pair<Rule>) -> String {
 
 /// Per-item annotated-list entry: an item plus the `Annotations:` that
 /// immediately preceded it (empty in the common case).
-type AnnItem<A, T> = (BTreeSet<Annotation<A>>, T);
+type AnnItem<A, T> = (AnnotationSet<A>, T);
 
 /// Fold an annotatedList's inner pairs (interleaved `Annotations` markers and
 /// item pairs, per the §2.5 grammar) into `(per-item annotations, item)` pairs.
@@ -1162,7 +1161,7 @@ where
     F: FnMut(Pair<Rule>, &Context<'_, A>) -> Result<T>,
 {
     let mut out = Vec::new();
-    let mut pending: BTreeSet<Annotation<A>> = BTreeSet::new();
+    let mut pending: AnnotationSet<A> = AnnotationSet::new();
     for p in list.into_inner() {
         if p.as_rule() == Rule::Annotations {
             pending.extend(parse_annotations(p, ctx)?);
@@ -1178,7 +1177,7 @@ where
 /// clause-level `ann` into `list[0]`'s own annotations; every other item keeps
 /// its own (post-comma) annotations untouched. Single-item clauses (the common
 /// case) are unchanged: the leading annotation still annotates the one axiom.
-fn bind_leading_to_first<A: ForIRI, T>(ann: BTreeSet<Annotation<A>>, list: &mut [AnnItem<A, T>]) {
+fn bind_leading_to_first<A: ForIRI, T>(ann: AnnotationSet<A>, list: &mut [AnnItem<A, T>]) {
     if let Some(first) = list.first_mut() {
         first.0.extend(ann);
     }
@@ -1189,7 +1188,7 @@ fn bind_leading_to_first<A: ForIRI, T>(ann: BTreeSet<Annotation<A>>, list: &mut 
 /// on an n-ary list annotate the axiom). Identity to the old behaviour when no
 /// item carries annotations.
 fn merge_list_ann<A: ForIRI, T>(
-    ann: &mut BTreeSet<Annotation<A>>,
+    ann: &mut AnnotationSet<A>,
     list: Vec<AnnItem<A, T>>,
     items: &mut Vec<T>,
 ) {
@@ -1216,7 +1215,7 @@ fn insert_class_frame<A: ForIRI, O: MutableOntology<A>>(
     // A leading `Annotations?` (before the subject) annotates the *declaration*
     // axiom — OWL-API renders an annotated `Declaration(Class(C))` this way.
     let mut first = inner.next().unwrap();
-    let mut decl_ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+    let mut decl_ann: AnnotationSet<A> = AnnotationSet::new();
     if first.as_rule() == Rule::Annotations {
         decl_ann = parse_annotations(first, ctx)?.into_iter().collect();
         first = inner.next().unwrap();
@@ -1256,7 +1255,7 @@ fn insert_class_frame<A: ForIRI, O: MutableOntology<A>>(
         // never tries to advance past it.
         let mut it = clause.into_inner();
         let mut first = it.next().unwrap();
-        let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+        let mut ann: AnnotationSet<A> = AnnotationSet::new();
         if kw != "annotations" && first.as_rule() == Rule::Annotations {
             ann = parse_annotations(first, ctx)?.into_iter().collect();
             first = it.next().unwrap();
@@ -1435,7 +1434,7 @@ pub(crate) fn insert_misc<A: ForIRI, O: MutableOntology<A>>(
     let kw = clause_keyword(&misc);
     let mut it = misc.into_inner();
     let mut first = it.next().unwrap();
-    let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+    let mut ann: AnnotationSet<A> = AnnotationSet::new();
     if first.as_rule() == Rule::Annotations {
         ann = parse_annotations(first, ctx)?.into_iter().collect();
         first = it.next().unwrap();
@@ -1522,7 +1521,7 @@ fn insert_object_property_frame<A: ForIRI, O: MutableOntology<A>>(
         let kw = clause_keyword(&clause);
         let mut it = clause.into_inner();
         let mut first = it.next().unwrap();
-        let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+        let mut ann: AnnotationSet<A> = AnnotationSet::new();
         if kw != "annotations" && first.as_rule() == Rule::Annotations {
             ann = parse_annotations(first, ctx)?.into_iter().collect();
             first = it.next().unwrap();
@@ -1651,7 +1650,7 @@ fn insert_object_property_frame<A: ForIRI, O: MutableOntology<A>>(
             "characteristics" => {
                 // §2.5 objectPropertyCharacteristicAnnotatedList: a LEADING
                 // clause-level annotation binds the FIRST item only.
-                let empty = BTreeSet::new();
+                let empty = AnnotationSet::new();
                 for (i, ch) in body.into_inner().enumerate() {
                     let item_ann = if i == 0 { &ann } else { &empty };
                     insert_object_characteristic(ch.as_str(), &subject_ope, item_ann, ont)?;
@@ -1666,7 +1665,7 @@ fn insert_object_property_frame<A: ForIRI, O: MutableOntology<A>>(
 fn insert_object_characteristic<A: ForIRI, O: MutableOntology<A>>(
     kw: &str,
     ope: &ObjectPropertyExpression<A>,
-    ann: &BTreeSet<Annotation<A>>,
+    ann: &AnnotationSet<A>,
     ont: &mut O,
 ) -> Result<()> {
     let ope = ope.clone();
@@ -1882,7 +1881,7 @@ fn insert_rule_frame<A: ForIRI, O: MutableOntology<A>>(
 ) -> Result<()> {
     let mut inner = frame.into_inner();
     let mut first = inner.next().unwrap();
-    let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+    let mut ann: AnnotationSet<A> = AnnotationSet::new();
     if first.as_rule() == Rule::Annotations {
         ann = parse_annotations(first, ctx)?.into_iter().collect();
         first = inner.next().unwrap();
@@ -1908,7 +1907,7 @@ fn insert_data_property_frame<A: ForIRI, O: MutableOntology<A>>(
         let kw = clause_keyword(&clause);
         let mut it = clause.into_inner();
         let mut first = it.next().unwrap();
-        let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+        let mut ann: AnnotationSet<A> = AnnotationSet::new();
         if kw != "annotations" && first.as_rule() == Rule::Annotations {
             ann = parse_annotations(first, ctx)?.into_iter().collect();
             first = it.next().unwrap();
@@ -1989,7 +1988,7 @@ fn insert_data_property_frame<A: ForIRI, O: MutableOntology<A>>(
             }
             "characteristics" => {
                 // §2.5: leading clause-level annotation binds the FIRST item only.
-                let empty = BTreeSet::new();
+                let empty = AnnotationSet::new();
                 for (i, ch) in body.into_inner().enumerate() {
                     let item_ann = if i == 0 { &ann } else { &empty };
                     // Only Functional is valid on a data property.
@@ -2027,7 +2026,7 @@ fn insert_annotation_property_frame<A: ForIRI, O: MutableOntology<A>>(
         let kw = clause_keyword(&clause);
         let mut it = clause.into_inner();
         let mut first = it.next().unwrap();
-        let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+        let mut ann: AnnotationSet<A> = AnnotationSet::new();
         if kw != "annotations" && first.as_rule() == Rule::Annotations {
             ann = parse_annotations(first, ctx)?.into_iter().collect();
             first = it.next().unwrap();
@@ -2111,7 +2110,7 @@ fn insert_individual_frame<A: ForIRI, O: MutableOntology<A>>(
         let kw = clause_keyword(&clause);
         let mut it = clause.into_inner();
         let mut first = it.next().unwrap();
-        let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+        let mut ann: AnnotationSet<A> = AnnotationSet::new();
         if kw != "annotations" && first.as_rule() == Rule::Annotations {
             ann = parse_annotations(first, ctx)?.into_iter().collect();
             first = it.next().unwrap();
@@ -2138,7 +2137,7 @@ fn insert_individual_frame<A: ForIRI, O: MutableOntology<A>>(
             }
             "facts" => {
                 // §2.5 factAnnotatedList: leading annotation binds the FIRST item only.
-                let empty = BTreeSet::new();
+                let empty = AnnotationSet::new();
                 for (i, fact) in body.into_inner().enumerate() {
                     let item_ann = if i == 0 { &ann } else { &empty };
                     insert_fact(fact, ctx, &subject_ind, item_ann, ont)?;
@@ -2191,7 +2190,7 @@ fn insert_fact<A: ForIRI, O: MutableOntology<A>>(
     fact: Pair<Rule>,
     ctx: &Context<'_, A>,
     from: &Individual<A>,
-    ann: &BTreeSet<Annotation<A>>,
+    ann: &AnnotationSet<A>,
     ont: &mut O,
 ) -> Result<()> {
     let mut inner = fact.into_inner();
@@ -2280,7 +2279,7 @@ fn insert_datatype_frame<A: ForIRI, O: MutableOntology<A>>(
         // single inner `Annotations` pair as the body.
         let mut it = clause.into_inner();
         let mut first = it.next().unwrap();
-        let mut ann: BTreeSet<Annotation<A>> = BTreeSet::new();
+        let mut ann: AnnotationSet<A> = AnnotationSet::new();
         if kw != "annotations" && first.as_rule() == Rule::Annotations {
             ann = parse_annotations(first, ctx)?.into_iter().collect();
             first = it.next().unwrap();
@@ -3554,8 +3553,8 @@ mod tests {
         pm.add_prefix("ex", "http://ex/").unwrap();
 
         // Helper: build a one-annotation BTreeSet with the given literal value.
-        let make_ann = |val: &str| -> BTreeSet<Annotation<std::rc::Rc<str>>> {
-            let mut s = BTreeSet::new();
+        let make_ann = |val: &str| -> AnnotationSet<std::rc::Rc<str>> {
+            let mut s = AnnotationSet::new();
             s.insert(Annotation {
                 ap: b.annotation_property("http://ex/prov"),
                 av: AnnotationValue::Literal(Literal::Simple {
@@ -3976,7 +3975,7 @@ mod tests {
         });
 
         // AnnotatedComponent: SubClassOf with annotation
-        let mut ann = BTreeSet::new();
+        let mut ann = AnnotationSet::new();
         ann.insert(Annotation {
             ap: b.annotation_property("http://ex/prov"),
             av: AnnotationValue::Literal(Literal::Simple {
@@ -4057,8 +4056,9 @@ mod tests {
             crate::io::ParserConfiguration::new(&b),
         )
         .unwrap();
-        let orig: BTreeSet<_> = o.iter().map(|ac| ac.component.clone()).collect();
-        let got: BTreeSet<_> = parsed.iter().map(|ac| ac.component.clone()).collect();
+        let orig: std::collections::BTreeSet<_> = o.iter().map(|ac| ac.component.clone()).collect();
+        let got: std::collections::BTreeSet<_> =
+            parsed.iter().map(|ac| ac.component.clone()).collect();
         assert_eq!(orig, got, "bare-name round-trip failed\n{s}");
     }
 
@@ -4413,9 +4413,9 @@ mod tests {
                 sub: ClassExpression::Class(b.class("http://ex/A")),
                 sup: ClassExpression::Class(b.class("http://ex/B")),
             }),
-            ann: BTreeSet::new(),
+            ann: AnnotationSet::new(),
         };
-        let mut ann = BTreeSet::new();
+        let mut ann = AnnotationSet::new();
         ann.insert(Annotation {
             ap: b.annotation_property("http://ex/p"),
             av: AnnotationValue::Literal(Literal::Simple {
@@ -4465,7 +4465,7 @@ mod tests {
         .unwrap();
 
         // First item (A ⊑ B) carries the leading annotation.
-        let mut ann = BTreeSet::new();
+        let mut ann = AnnotationSet::new();
         ann.insert(Annotation {
             ap: b.annotation_property("http://ex/note"),
             av: AnnotationValue::Literal(Literal::Simple {
@@ -4486,7 +4486,7 @@ mod tests {
                 sub: ClassExpression::Class(b.class("http://ex/A")),
                 sup: ClassExpression::Class(b.class("http://ex/C")),
             }),
-            ann: BTreeSet::new(),
+            ann: AnnotationSet::new(),
         };
         // The bug-producing axiom: A ⊑ C WITH the leading annotation.
         let bad_c = AnnotatedComponent {
@@ -4537,7 +4537,7 @@ mod tests {
         let got: BTreeSet<_> = parsed.iter().cloned().collect();
 
         let mk_ann = |val: &str| {
-            let mut s = BTreeSet::new();
+            let mut s = AnnotationSet::new();
             s.insert(Annotation {
                 ap: b.annotation_property("http://ex/note"),
                 av: AnnotationValue::Literal(Literal::Simple {
@@ -4556,7 +4556,7 @@ mod tests {
         };
         let transitive_plain = AnnotatedComponent {
             component: Component::TransitiveObjectProperty(TransitiveObjectProperty(r_ope.clone())),
-            ann: BTreeSet::new(),
+            ann: AnnotationSet::new(),
         };
         // Bug shape: Transitive carrying the leading annotation.
         let transitive_bad = AnnotatedComponent {
@@ -4594,7 +4594,7 @@ mod tests {
                 from: ind_a.clone(),
                 to: ind_c.clone(),
             }),
-            ann: BTreeSet::new(),
+            ann: AnnotationSet::new(),
         };
         let fact_ac_bad = AnnotatedComponent {
             component: Component::ObjectPropertyAssertion(ObjectPropertyAssertion {
@@ -4639,7 +4639,7 @@ mod tests {
             sub: ClassExpression::Class(b.class("http://ex/A")),
             sup: ClassExpression::Class(b.class("http://ex/B")),
         });
-        let mut ann = BTreeSet::new();
+        let mut ann = AnnotationSet::new();
         ann.insert(Annotation {
             ap: b.annotation_property("http://ex/p"),
             av: AnnotationValue::Literal(Literal::Simple {
