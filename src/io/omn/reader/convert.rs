@@ -3,7 +3,7 @@
 //! A port of `io/omn/reader/from_pair.rs`: the same decisions in the same
 //! order, including the declaration-aware choice between object and data
 //! restrictions, so both readers build the same components.
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 use curie::{Curie, PrefixMapping};
 
@@ -48,7 +48,7 @@ pub struct Conv<'c, 'a, A: ForIRI> {
     pub unit: &'a str,
 }
 
-type AnnItem<A, T> = (BTreeSet<Annotation<A>>, T);
+type AnnItem<A, T> = (AnnotationSet<A>, T);
 
 fn invalid<'a, T>(at: &'a str, msg: impl Into<String>) -> CR<'a, T> {
     Err(PErr::semantic(at, at.len().min(1), msg))
@@ -501,7 +501,7 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
     fn annotation(&self, e: &AnnEntry<'a>) -> CR<'a, Annotation<A>> {
         let ann = match &e.nested {
             Some(n) => self.annotations(n)?.into_iter().collect(),
-            None => BTreeSet::new(),
+            None => AnnotationSet::new(),
         };
         let ap = AnnotationProperty(self.iri(&e.property)?);
         let av = self.annotation_value(&e.target)?;
@@ -512,10 +512,10 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
         x.0.iter().map(|e| self.annotation(e)).collect()
     }
 
-    fn ann_set(&self, x: &Option<Annotations<'a>>) -> CR<'a, BTreeSet<Annotation<A>>> {
+    fn ann_set(&self, x: &Option<Annotations<'a>>) -> CR<'a, AnnotationSet<A>> {
         match x {
             Some(a) => Ok(self.annotations(a)?.into_iter().collect()),
-            None => Ok(BTreeSet::new()),
+            None => Ok(AnnotationSet::new()),
         }
     }
 
@@ -533,14 +533,14 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
         Ok(out)
     }
 
-    fn bind_leading_to_first<T>(ann: BTreeSet<Annotation<A>>, list: &mut [AnnItem<A, T>]) {
+    fn bind_leading_to_first<T>(ann: AnnotationSet<A>, list: &mut [AnnItem<A, T>]) {
         if let Some(first) = list.first_mut() {
             first.0.extend(ann);
         }
     }
 
     fn merge_list_ann<T>(
-        ann: &mut BTreeSet<Annotation<A>>,
+        ann: &mut AnnotationSet<A>,
         list: Vec<AnnItem<A, T>>,
         items: &mut Vec<T>,
     ) {
@@ -606,9 +606,9 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
     }
 
     /// The `Annotations:` of a clause that has a keyword, and its body.
-    fn clause_ann(&self, c: &Clause<'a>) -> CR<'a, BTreeSet<Annotation<A>>> {
+    fn clause_ann(&self, c: &Clause<'a>) -> CR<'a, AnnotationSet<A>> {
         if c.kw == Ck::Annotations {
-            Ok(BTreeSet::new())
+            Ok(AnnotationSet::new())
         } else {
             self.ann_set(&c.ann)
         }
@@ -868,7 +868,7 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
                     let Body::Chars(chars) = &clause.body else {
                         unreachable!("characteristics")
                     };
-                    let empty = BTreeSet::new();
+                    let empty = AnnotationSet::new();
                     for (i, ch) in chars.iter().enumerate() {
                         let item_ann = if i == 0 { &ann } else { &empty };
                         self.object_characteristic(ch, &subject_ope, item_ann, out)?;
@@ -884,7 +884,7 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
         &self,
         kw: &str,
         ope: &ObjectPropertyExpression<A>,
-        ann: &BTreeSet<Annotation<A>>,
+        ann: &AnnotationSet<A>,
         out: &mut Out<A>,
     ) -> CR<'a, ()> {
         let ope = ope.clone();
@@ -990,7 +990,7 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
                     let Body::Chars(chars) = &clause.body else {
                         unreachable!("characteristics")
                     };
-                    let empty = BTreeSet::new();
+                    let empty = AnnotationSet::new();
                     for (i, ch) in chars.iter().enumerate() {
                         let item_ann = if i == 0 { &ann } else { &empty };
                         if ch.eq_ignore_ascii_case("functional") {
@@ -1112,7 +1112,7 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
                     let Body::Facts(facts) = &clause.body else {
                         unreachable!("facts")
                     };
-                    let empty = BTreeSet::new();
+                    let empty = AnnotationSet::new();
                     for (i, fact) in facts.iter().enumerate() {
                         let item_ann = if i == 0 { &ann } else { &empty };
                         self.fact(fact, &subject_ind, item_ann, out)?;
@@ -1154,7 +1154,7 @@ impl<'c, 'a, A: ForIRI> Conv<'c, 'a, A> {
         &self,
         fact: &Fact<'a>,
         from: &Individual<A>,
-        ann: &BTreeSet<Annotation<A>>,
+        ann: &AnnotationSet<A>,
         out: &mut Out<A>,
     ) -> CR<'a, ()> {
         let ope = self.ope(&fact.ope)?;

@@ -3,7 +3,6 @@
 //! This builds model values directly while parsing, rather than going via a
 //! parse tree as the original pest reader (the `horned-pest` crate) does. It accepts the
 //! same language.
-use std::collections::BTreeSet;
 use std::io::BufRead;
 
 use curie::{Curie, PrefixMapping};
@@ -353,8 +352,8 @@ fn literal<'a, A: ForIRI>(c: &Ctx<'_, A>, i: &'a str) -> R<'a, Literal<A>> {
 // ---------------------------------------------------------------------------
 // Annotations
 
-fn annotations<'a, A: ForIRI>(c: &Ctx<'_, A>, mut i: &'a str) -> R<'a, BTreeSet<Annotation<A>>> {
-    let mut set = BTreeSet::new();
+fn annotations<'a, A: ForIRI>(c: &Ctx<'_, A>, mut i: &'a str) -> R<'a, AnnotationSet<A>> {
+    let mut set = AnnotationSet::new();
     while peek_kw(i) == Some("Annotation") {
         let (r, a) = annotation(c, i)?;
         set.insert(a);

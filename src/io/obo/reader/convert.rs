@@ -339,7 +339,7 @@ fn meta_assertion<A: ForIRI>(
                 return None;
             };
             let ann = lit_ann(b, &format!("{OIO}hasDbXref"), &unescape(id.trim()));
-            let axiom_anns: BTreeSet<Annotation<A>> = desc
+            let axiom_anns: AnnotationSet<A> = desc
                 .map(|d| lit_ann(b, RDFS_LABEL, &unquote(d)))
                 .into_iter()
                 .collect();

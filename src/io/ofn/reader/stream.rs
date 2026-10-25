@@ -9,7 +9,6 @@
 //!
 //! Items are yielded in document order: prefixes, the ontology id, imports,
 //! ontology annotations, then axioms.
-use std::collections::BTreeSet;
 use std::io::{BufRead, Read};
 use std::marker::PhantomData;
 
@@ -358,7 +357,7 @@ impl<A: ForIRI, R: BufRead, B: AsRef<Build<A>>> Reader<A, R, B> {
     }
 
     fn component<C: Into<Component<A>>>(c: C) -> StreamComponent<AnnotatedComponent<A>> {
-        StreamComponent::Component(AnnotatedComponent::new(c, BTreeSet::new()))
+        StreamComponent::Component(AnnotatedComponent::new(c, AnnotationSet::new()))
     }
 
     fn next_item(&mut self) -> Result<Option<StreamComponent<AnnotatedComponent<A>>>, HornedError> {
