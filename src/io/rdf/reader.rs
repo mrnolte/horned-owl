@@ -1003,6 +1003,29 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
         Ok(())
     }
 
+    /// The key in `ann_map` of a reification of the property chain axiom of
+    /// `pr` whose `owl:annotatedTarget` is another list than `id` with the same
+    /// members `seq`: the OWL API writes the target as such a copy (#331). The copy
+    /// is used up.
+    fn chain_copy_key(
+        &mut self,
+        pr: &IRI<A>,
+        id: &BNode<A>,
+        seq: &[Term<A>],
+    ) -> Option<[Term<A>; 3]> {
+        let key = self.ann_map.keys().find(|key| match key {
+            [Term::Iri(s), Term::OWL(VOWL::PropertyChainAxiom), Term::BNode(other)] => {
+                s == pr && other != id && self.bnode_seq.get(other).map(Vec::as_slice) == Some(seq)
+            }
+            _ => false,
+        })?;
+        let key = key.clone();
+        if let [_, _, Term::BNode(other)] = &key {
+            self.bnode_seq.remove(other);
+        }
+        Some(key)
+    }
+
     /// Process named entity declaration axioms
     fn declarations(&mut self) {
         // Table 7
@@ -2000,6 +2023,9 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             .into_iter()
             .chain(single_bnodes.into_iter().map(|t| t.into()))
         {
+            // The reification key of a property chain whose annotatedTarget is a
+            // copy of the list (#331).
+            let mut copy_key = None;
             let axiom: Result<_, HornedError> = match t.triple() {
                 [sub_tce, Term::RDFS(VRDFS::SubClassOf), sup_tce] => ok_some! {
                     SubClassOf {
@@ -2184,11 +2210,14 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                     Term::OWL(VOWL::PropertyChainAxiom),
                     Term::BNode(id),
                 ] => {
+                    let seq = self.bnode_seq.remove(id);
+                    if let Some(seq) = &seq {
+                        copy_key = self.chain_copy_key(pr, id, seq);
+                    }
                     ok_some! {
                         SubObjectPropertyOf {
                             sub: SubObjectPropertyExpression::ObjectPropertyChain(
-                                self.bnode_seq
-                                    .remove(id)?
+                                seq?
                                     .iter()
                                     .map(|t| self.retrieve_to_ope(t).unwrap())
                                     .collect()
@@ -2333,7 +2362,10 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
 
             match axiom? {
                 Some(axiom) => {
-                    let ann = self.ann_map.remove(t.triple()).unwrap_or_default();
+                    let mut ann = self.ann_map.remove(t.triple()).unwrap_or_default();
+                    if let Some(key) = copy_key {
+                        ann.extend(self.ann_map.remove(&key).unwrap_or_default());
+                    }
                     self.merge(AnnotatedComponent {
                         component: axiom,
                         ann,
@@ -3367,6 +3399,43 @@ mod test {
             .filter(|c| matches!(c.component, crate::model::Component::DeclareClass(_)))
             .count();
         assert_eq!(n, 1);
+    }
+
+    /// The annotation of a property chain axiom whose reification names a copy of
+    /// the list as owl:annotatedTarget, as the OWL API writes it, is read (#331).
+    #[test]
+    fn annotated_property_chain_with_copied_list() {
+        let text = r#"@prefix : <http://example.org/chain#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<http://example.org/chain> a owl:Ontology .
+:q a owl:ObjectProperty .
+:r a owl:ObjectProperty .
+:p a owl:ObjectProperty ;
+    owl:propertyChainAxiom ( :q :r ) .
+[] a owl:Axiom ;
+    owl:annotatedSource :p ;
+    owl:annotatedProperty owl:propertyChainAxiom ;
+    owl:annotatedTarget ( :q :r ) ;
+    rdfs:comment "Why the chain holds." .
+"#;
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(incomp.is_complete(), "{incomp:?}");
+        let ont: ComponentMappedOntology<RcStr, Rc<AnnotatedComponent<RcStr>>> = ont.into();
+        let chains: Vec<_> = ont
+            .i()
+            .component_for_kind(ComponentKind::SubObjectPropertyOf)
+            .collect();
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].ann.len(), 1, "{:?}", chains[0]);
     }
 
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
