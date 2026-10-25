@@ -331,6 +331,14 @@ pub(crate) fn skip_bom<R: std::io::BufRead + ?Sized>(bufread: &mut R) -> std::io
     Ok(())
 }
 
+/// Whether `line`, in lower case, starts with the SPARQL-style Turtle directive
+/// `keyword` (`prefix` or `base`) followed by white space.
+fn sparql_directive(line: &str, keyword: &str) -> bool {
+    line.strip_prefix(keyword)
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(char::is_whitespace)
+}
+
 /// Detect the serialization format of an OWL document from its content.
 ///
 /// The detection logic is adapted from
@@ -374,6 +382,12 @@ pub fn detect_format(bytes: &[u8]) -> Option<(ResourceType, Option<oxrdfio::RdfF
         }
         let lower = l.to_ascii_lowercase();
         if lower.starts_with("@prefix") || lower.starts_with("@base") {
+            return Some((ResourceType::RDF, Some(oxrdfio::RdfFormat::Turtle)));
+        }
+        // The SPARQL forms of the Turtle directives (Turtle 1.1, rule [3]):
+        // case-insensitive and followed by white space, unlike Manchester
+        // `Prefix:` and functional `Prefix(` (horned-owl#327).
+        if sparql_directive(&lower, "prefix") || sparql_directive(&lower, "base") {
             return Some((ResourceType::RDF, Some(oxrdfio::RdfFormat::Turtle)));
         }
         if l.starts_with('<') && !l.starts_with("<?") && !l.starts_with("<!") && l.contains("> <") {
@@ -490,6 +504,39 @@ mod tests {
             let with_bom = format!("{}{text}", super::BOM);
             assert_eq!(count(format, &with_bom), count(format, text), "{format}");
         }
+    }
+
+    /// Turtle with the SPARQL forms of its directives (horned-owl#327); Manchester
+    /// and functional syntax keep theirs.
+    #[test]
+    fn detect_format_turtle_sparql_directives() {
+        for doc in [
+            "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n<http://example.org/o> a owl:Ontology .\n",
+            "prefix owl: <http://www.w3.org/2002/07/owl#>\n<http://example.org/o> a owl:Ontology .\n",
+            "PREFIX : <http://example.org/>\n:o a <http://www.w3.org/2002/07/owl#Ontology> .\n",
+            "BASE <http://example.org/>\n<o> a <http://www.w3.org/2002/07/owl#Ontology> .\n",
+            "# comment\n\nPrefix\towl: <http://www.w3.org/2002/07/owl#>\n",
+        ] {
+            assert!(
+                matches!(
+                    super::detect_format(doc.as_bytes()),
+                    Some((super::ResourceType::RDF, Some(oxrdfio::RdfFormat::Turtle)))
+                ),
+                "{doc}"
+            );
+        }
+        assert!(matches!(
+            super::detect_format(
+                b"Prefix: : <http://example.org/>\nOntology: <http://example.org/o>\n"
+            ),
+            Some((super::ResourceType::OMN, None))
+        ));
+        assert!(matches!(
+            super::detect_format(
+                b"Prefix(:=<http://example.org/>)\nOntology(<http://example.org/o>)\n"
+            ),
+            Some((super::ResourceType::OFN, None))
+        ));
     }
 
     #[test]
