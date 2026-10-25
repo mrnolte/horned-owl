@@ -951,11 +951,21 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
 
         for (k, v) in std::mem::take(&mut self.bnode) {
             match v.as_slice() {
+                // An axiom, or an ontology annotation: its reification has
+                // the type owl:Annotation and the ontology IRI as source
+                // (Mapping to RDF Graphs, table 2; #330).
                 [
                     [_, Term::OWL(VOWL::AnnotatedProperty), p], //:
                     [_, Term::OWL(VOWL::AnnotatedSource), sb],  //:
                     [_, Term::OWL(VOWL::AnnotatedTarget), ob],  //:
                     [_, Term::RDF(VRDF::Type), Term::OWL(VOWL::Axiom)],
+                    ann @ ..,
+                ]
+                | [
+                    [_, Term::OWL(VOWL::AnnotatedProperty), p], //:
+                    [_, Term::OWL(VOWL::AnnotatedSource), sb @ Term::Iri(_)], //:
+                    [_, Term::OWL(VOWL::AnnotatedTarget), ob],  //:
+                    [_, Term::RDF(VRDF::Type), Term::OWL(VOWL::Annotation)],
                     ann @ ..,
                 ] => {
                     // The original axiom that this annotation
@@ -2584,8 +2594,11 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                 // an annotation. Some versions of the OWL API do not
                 // declare annotation properties for ontology annotations
                 [Term::Iri(iri), _, _] if ont_id.iri.as_ref() == Some(iri) => {
-                    self.o
-                        .insert(OntologyAnnotation(self.annotation(t.triple())?));
+                    // The annotations of an ontology annotation are
+                    // annotations on the annotation, as in OFN.
+                    let mut annotation = self.annotation(t.triple())?;
+                    annotation.ann = self.ann_map.remove(t.triple()).unwrap_or_default();
+                    self.o.insert(OntologyAnnotation(annotation));
                 }
                 [Term::Iri(iri), Term::RDFS(rdfs), _] if rdfs.is_builtin() => {
                     firi(self, t.triple(), iri)?
