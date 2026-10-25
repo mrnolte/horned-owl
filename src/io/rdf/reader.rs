@@ -3540,6 +3540,43 @@ mod test {
         assert_eq!(annotation.ann.len(), 1);
     }
 
+    /// The annotation of a property chain axiom whose reification names a copy of
+    /// the list as owl:annotatedTarget, as the OWL API writes it, is read (#331).
+    #[test]
+    fn annotated_property_chain_with_copied_list() {
+        let text = r#"@prefix : <http://example.org/chain#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<http://example.org/chain> a owl:Ontology .
+:q a owl:ObjectProperty .
+:r a owl:ObjectProperty .
+:p a owl:ObjectProperty ;
+    owl:propertyChainAxiom ( :q :r ) .
+[] a owl:Axiom ;
+    owl:annotatedSource :p ;
+    owl:annotatedProperty owl:propertyChainAxiom ;
+    owl:annotatedTarget ( :q :r ) ;
+    rdfs:comment "Why the chain holds." .
+"#;
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert!(incomp.is_complete(), "{incomp:?}");
+        let ont: ComponentMappedOntology<RcStr, Rc<AnnotatedComponent<RcStr>>> = ont.into();
+        let chains: Vec<_> = ont
+            .i()
+            .component_for_kind(ComponentKind::SubObjectPropertyOf)
+            .collect();
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].ann.len(), 1, "{:?}", chains[0]);
+    }
+
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
         let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
             OntologyParser::from_bufread_with_format(bufread, Default::default(), format)
