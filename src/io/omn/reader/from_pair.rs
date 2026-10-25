@@ -485,15 +485,19 @@ impl<A: ForIRI> FromPair<A> for ClassExpression<A> {
                 }
             }
 
-            // Conjunction = { Primary ~ (AndKw ~ Primary)* }
-            // `AndKw` is a compound-atomic keyword guard rule (emits a pair);
-            // we filter to only `Primary` children.
-            // 1 Primary → unwrap, ≥2 → ObjectIntersectionOf.
+            // Conjunction = { ClassIRI ~ ThatKw ~ Primary ~ (AndKw ~ Primary)*
+            //               | Primary ~ (AndKw ~ Primary)* }
+            // `ThatKw` and `AndKw` are compound-atomic keyword guard rules (emit a
+            // pair); we filter to only the `ClassIRI` and `Primary` children.
+            // 1 child → unwrap, ≥2 → ObjectIntersectionOf.
             Rule::Conjunction => {
                 let mut ces: Vec<ClassExpression<A>> = pair
                     .into_inner()
-                    .filter(|p| p.as_rule() == Rule::Primary)
-                    .map(|p| Self::from_pair_unchecked(p, ctx))
+                    .filter(|p| matches!(p.as_rule(), Rule::ClassIRI | Rule::Primary))
+                    .map(|p| match p.as_rule() {
+                        Rule::ClassIRI => Class::from_pair(p, ctx).map(ClassExpression::Class),
+                        _ => Self::from_pair_unchecked(p, ctx),
+                    })
                     .collect::<Result<_>>()?;
                 if ces.len() == 1 {
                     Ok(ces.pop().unwrap())
@@ -2318,6 +2322,34 @@ mod tests {
     use crate::io::omn::reader::lexer::ManchesterLexer;
     use crate::model::{Build, RcStr};
     use rstest::rstest;
+
+    #[test]
+    fn reads_that_conjunction() {
+        let b = Build::new_rc();
+        let mut pm = curie::PrefixMapping::default();
+        pm.add_prefix("", "http://t/").unwrap();
+        let ctx = Context::new(&b, &pm);
+        let ce = |text: &str| {
+            let pair = ManchesterLexer::lex(Rule::Description, text)
+                .unwrap_or_else(|e| panic!("{text}: {e}"))
+                .next()
+                .unwrap();
+            ClassExpression::<RcStr>::from_pair(pair, &ctx).unwrap()
+        };
+        assert_eq!(
+            ce(":Device that :locatedIn value :hall_A"),
+            ce(":Device and (:locatedIn value :hall_A)")
+        );
+        assert_eq!(
+            ce(":Device that :locatedIn value :hall_A and not (:locatedIn value :hall_B)"),
+            ce(":Device and (:locatedIn value :hall_A) and not (:locatedIn value :hall_B)")
+        );
+        assert_eq!(
+            ce(":Device that :locatedIn some :Hall or :Robot"),
+            ce("(:Device and (:locatedIn some :Hall)) or :Robot")
+        );
+        assert_eq!(ce(":that and :A"), ce("(:that) and :A"));
+    }
 
     #[test]
     fn parses_iri_full_and_prefixed() {

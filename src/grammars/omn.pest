@@ -75,6 +75,7 @@ MinKw          = ${ ^"min"     ~ NameBoundary }
 MaxKw          = ${ ^"max"     ~ NameBoundary }
 ExactlyKw      = ${ ^"exactly" ~ NameBoundary }
 InverseKw      = ${ ^"inverse" ~ NameBoundary }
+ThatKw         = ${ ^"that"    ~ NameBoundary }
 
 // ---- class-expression precedence --------------------------------------------
 // lowest precedence: "or"
@@ -83,7 +84,10 @@ Description = { Conjunction ~ ( OrKw ~ Conjunction )* }
 
 // next: "and"
 
-Conjunction = { Primary ~ ( AndKw ~ Primary )* }
+Conjunction = {
+    ClassIRI ~ ThatKw ~ Primary ~ ( AndKw ~ Primary )*
+  | Primary ~ ( AndKw ~ Primary )*
+}
 
 // highest: "not" prefix + restriction/atomic
 
