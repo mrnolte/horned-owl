@@ -584,6 +584,9 @@ pub struct OntologyParser<
     used_bnode: HashSet<BNode<A>>,
     // Annotations mapped to Triples
     ann_map: HashMap<[Term<A>; 3], BTreeSet<Annotation<A>>>,
+    // Further rdf:type triples of axiom reifications: no annotations, left
+    // for IncompleteParse (#340)
+    reification_types: Vec<VPosTriple<A>>,
     atom: HashMap<Term<A>, Atom<A>>,
     variable: HashMap<IRI<A>, Variable<A>>,
 
@@ -610,6 +613,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             object_property_expression: d!(),
             data_range: d!(),
             used_bnode: d!(),
+            reification_types: d!(),
             ann_map: d!(),
             atom: d!(),
             variable: d!(),
@@ -958,7 +962,17 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
                         ob.clone(),
                     ]);
                     bnode_to_key.insert(k, key.clone());
-                    let annotations = self.parse_annotations(ann)?;
+                    // A further rdf:type of the reification node (a
+                    // hand-edited file, another tool) is no annotation; it
+                    // stays unread instead of failing the document (#340).
+                    let (types, ann): (Vec<_>, Vec<_>) = ann
+                        .iter()
+                        .cloned()
+                        .partition(|t| matches!(t, [_, Term::RDF(VRDF::Type), _]));
+                    if !types.is_empty() {
+                        self.reification_types.push(VPosTriple(types, v.1));
+                    }
+                    let annotations = self.parse_annotations(&ann)?;
                     self.ann_map.insert(key, annotations);
                 }
 
@@ -2792,7 +2806,8 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             &mut self.bnode,
         );
 
-        let bnode: Vec<_> = self.bnode.into_values().collect();
+        let mut bnode: Vec<_> = self.bnode.into_values().collect();
+        bnode.append(&mut self.reification_types);
         let bnode_seq: Vec<_> = self.bnode_seq.into_values().collect();
 
         // Entries in `used_bnode` were retrieved (possibly more than
@@ -3123,6 +3138,43 @@ mod test {
         let (_rdfont, incomplete) = p.as_ontology_and_incomplete();
         assert!(incomplete.is_complete());
         Ok(())
+    }
+
+    /// A further rdf:type of an owl:Axiom node does not fail the document: the
+    /// axiom keeps its annotation and the triple is reported as unread (#340).
+    #[test]
+    fn axiom_reification_with_extra_type() {
+        let text = r#"@prefix : <http://example.org/axiom#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<http://example.org/axiom> a owl:Ontology .
+:A a owl:Class .
+:B a owl:Class .
+:Reviewed a owl:Class .
+:A rdfs:subClassOf :B .
+[ a owl:Axiom , :Reviewed ;
+  owl:annotatedSource :A ;
+  owl:annotatedProperty rdfs:subClassOf ;
+  owl:annotatedTarget :B ;
+  rdfs:comment "checked" ] .
+"#;
+        let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+            OntologyParser::from_bufread_with_format(
+                &mut text.as_bytes(),
+                Default::default(),
+                oxrdfio::RdfFormat::Turtle,
+            )
+            .unwrap()
+            .parse()
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(incomp.bnode.len(), 1, "{incomp:?}");
+        let ont: ComponentMappedOntology<_, _> = ont.into();
+        let sub: Vec<_> = ont
+            .i()
+            .component_for_kind(ComponentKind::SubClassOf)
+            .collect();
+        assert_eq!(sub.len(), 1);
+        assert_eq!(sub[0].ann.len(), 1);
     }
 
     #[test]
