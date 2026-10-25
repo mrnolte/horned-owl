@@ -3767,6 +3767,38 @@ ex:note a owl:AnnotationProperty .
         assert_eq!(kinds, ["complement", "intersection", "one of", "union"]);
     }
 
+    /// `owl:equivalentClass` on an undeclared subject reads as on a class, like
+    /// `rdfs:subClassOf`, and does not fail the document (#339).
+    #[test]
+    fn equivalent_class_on_undeclared_subject() {
+        let head = "@prefix : <http://example.org/equivalent#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+<http://example.org/equivalent> a owl:Ontology .
+:A a owl:Class .
+:red a owl:NamedIndividual .
+:green a owl:NamedIndividual .
+";
+        for body in [
+            ":Colour owl:equivalentClass [ a owl:Class ; owl:oneOf ( :red :green ) ] .
+",
+            ":Colour owl:equivalentClass :A .
+",
+        ] {
+            let text = format!("{head}{body}");
+            let (ont, _): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
+                OntologyParser::from_bufread_with_format(
+                    &mut text.as_bytes(),
+                    Default::default(),
+                    oxrdfio::RdfFormat::Turtle,
+                )
+                .unwrap()
+                .parse()
+                .unwrap_or_else(|e| panic!("{text}: {e}"));
+            let ont: ComponentMappedOntology<_, _> = ont.into();
+            assert_eq!(ont.i().equivalent_class().count(), 1, "{text}");
+        }
+    }
+
     fn read_from_format<R: BufRead>(bufread: &mut R, format: oxrdfio::RdfFormat) {
         let (ont, incomp): (ConcreteRDFOntology<RcStr, Rc<AnnotatedComponent<RcStr>>>, _) =
             OntologyParser::from_bufread_with_format(bufread, Default::default(), format)
