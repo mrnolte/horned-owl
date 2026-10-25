@@ -570,8 +570,17 @@ from_start! {
         let mut literal = String::new();
         let mut buf = Vec::new();
         loop {
-            if let Event::End(event) = r.reader.read_event_into(&mut buf)?
-                && let b"Literal" = event.local_name().as_ref() { break; }
+            buf.clear();
+            match r.reader.read_event_into(&mut buf)? {
+                Event::End(event) if event.local_name().as_ref() == b"Literal" => break,
+                // A CDATA section is taken as it stands: `&` and `<` in it are
+                // no references or markup.
+                Event::CData(cdata) => {
+                    literal.push_str(&r.reader.decoder().decode(&cdata)?);
+                    continue;
+                }
+                _ => {}
+            }
 
             // This decoding step is not sufficient on its own.
             // For instance, "A --> B" would yield "A --&gt; B".
@@ -1844,6 +1853,33 @@ pub mod test {
                 .unwrap()
                 .as_ref(),
             "http://www.example.com/iri"
+        );
+    }
+
+    /// A CDATA section in a literal is taken as it stands, also with `&` and `<`
+    /// in it.
+    #[test]
+    fn test_literal_with_cdata() {
+        let text = r#"<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#" ontologyIRI="http://example.org/cdata">
+    <Annotation>
+        <AnnotationProperty IRI="http://www.w3.org/2000/01/rdf-schema#comment"/>
+        <Literal>before <![CDATA[CDATA with <markup> & a #.]]> &amp; after</Literal>
+    </Annotation>
+</Ontology>
+"#;
+        let (ont, _) = read_ok(&mut text.as_bytes());
+        let literals: Vec<String> = ont
+            .i()
+            .ontology_annotation()
+            .filter_map(|a| match &a.0.av {
+                AnnotationValue::Literal(Literal::Simple { literal }) => Some(literal.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            literals,
+            vec!["before CDATA with <markup> & a #. & after".to_owned()]
         );
     }
 
