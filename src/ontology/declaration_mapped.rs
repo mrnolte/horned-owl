@@ -16,6 +16,8 @@ use std::marker::PhantomData;
 pub struct DeclarationMappedIndex<A, AA> {
     // Map between IRIs and their kinds
     kinds: HashMap<IRI<A>, NamedEntityKind>,
+    // Map between IRIs and all their declared kinds
+    declared: HashMap<IRI<A>, Vec<NamedEntityKind>>,
     // Set of punned IRIs
     puns: HashSet<IRI<A>>,
     pd: PhantomData<AA>,
@@ -47,6 +49,25 @@ impl<A: ForIRI, AA: ForIndex<A>> DeclarationMappedIndex<A, AA> {
     ) -> Option<NamedOWLEntityKind> {
         self.kind_prefer_punned_individual(iri)
             .and_then(|e| e.as_owl())
+    }
+
+    pub fn is_declared_as(&self, iri: &IRI<A>, kind: NamedOWLEntityKind) -> bool {
+        self.declared
+            .get(iri)
+            .is_some_and(|kinds| kinds.iter().any(|k| k.as_owl() == Some(kind)))
+            || self.declaration_kind(iri) == Some(kind)
+    }
+
+    pub fn declaration_kind_preferring(
+        &self,
+        iri: &IRI<A>,
+        preferred: &[NamedOWLEntityKind],
+    ) -> Option<NamedOWLEntityKind> {
+        preferred
+            .iter()
+            .copied()
+            .find(|kind| self.is_declared_as(iri, *kind))
+            .or_else(|| self.declaration_kind(iri))
     }
 
     pub fn is_kind(&self, iri: &IRI<A>, kind: NamedEntityKind) -> bool {
@@ -128,6 +149,7 @@ impl<A, AA> Default for DeclarationMappedIndex<A, AA> {
     fn default() -> Self {
         DeclarationMappedIndex {
             kinds: Default::default(),
+            declared: Default::default(),
             puns: Default::default(),
             pd: Default::default(),
         }
@@ -140,6 +162,11 @@ impl<A: ForIRI, AA: ForIndex<A>> OntologyIndex<A, AA> for DeclarationMappedIndex
             {
                 let ne = self.aa_to_ne(ax.borrow())?;
                 let iri = self.aa_to_iri(ax.borrow())?;
+
+                let declared = self.declared.entry(iri.clone()).or_default();
+                if !declared.contains(&ne) {
+                    declared.push(ne);
+                }
 
                 // If this is a individual and we already have a
                 // class, this is a pun, and we ignore the NI
@@ -181,7 +208,16 @@ impl<A: ForIRI, AA: ForIndex<A>> OntologyIndex<A, AA> for DeclarationMappedIndex
 
     fn index_remove(&mut self, ax: &AnnotatedComponent<A>) -> bool {
         let s = some! {
-            self.kinds.remove(&self.aa_to_iri(ax)?)
+            {
+                let iri = self.aa_to_iri(ax)?;
+                if let (Some(ne), Some(declared)) = (self.aa_to_ne(ax), self.declared.get_mut(&iri)) {
+                    declared.retain(|k| *k != ne);
+                    if declared.is_empty() {
+                        self.declared.remove(&iri);
+                    }
+                }
+                self.kinds.remove(&iri)
+            }
         };
 
         s.is_some()
@@ -225,6 +261,39 @@ mod test {
         assert!(d.index_insert(s.0.into()));
         assert!(d.index_insert(s.1.into()));
         assert!(d.index_insert(s.2.into()));
+    }
+
+    #[test]
+    fn test_punned_declaration_kinds() {
+        let b = Build::new_rc();
+        let iri = "http://www.example.com/p";
+        for class_last in [false, true] {
+            let mut d = DeclarationMappedIndex::new_rc();
+            let class: NamedOWLEntity<_> = b.class(iri).into();
+            let property: NamedOWLEntity<_> = b.object_property(iri).into();
+            let (first, second) = if class_last {
+                (property, class)
+            } else {
+                (class, property)
+            };
+            let first: AnnotatedComponent<RcStr> = first.into();
+            let second: AnnotatedComponent<RcStr> = second.into();
+            d.index_insert(first.into());
+            d.index_insert(second.into());
+
+            let iri = b.iri(iri);
+            assert!(d.is_declared_as(&iri, NamedOWLEntityKind::Class));
+            assert!(d.is_declared_as(&iri, NamedOWLEntityKind::ObjectProperty));
+            assert!(!d.is_declared_as(&iri, NamedOWLEntityKind::DataProperty));
+            assert_eq!(
+                d.declaration_kind_preferring(&iri, &[NamedOWLEntityKind::ObjectProperty]),
+                Some(NamedOWLEntityKind::ObjectProperty)
+            );
+            assert_eq!(
+                d.declaration_kind_preferring(&iri, &[NamedOWLEntityKind::Class]),
+                Some(NamedOWLEntityKind::Class)
+            );
+        }
     }
 
     #[test]
