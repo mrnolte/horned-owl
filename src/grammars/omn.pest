@@ -75,6 +75,7 @@ MinKw          = ${ ^"min"     ~ NameBoundary }
 MaxKw          = ${ ^"max"     ~ NameBoundary }
 ExactlyKw      = ${ ^"exactly" ~ NameBoundary }
 InverseKw      = ${ ^"inverse" ~ NameBoundary }
+ThatKw         = ${ ^"that"    ~ NameBoundary }
 
 // ---- class-expression precedence --------------------------------------------
 // lowest precedence: "or"
@@ -83,7 +84,16 @@ Description = { Conjunction ~ ( OrKw ~ Conjunction )* }
 
 // next: "and"
 
-Conjunction = { Primary ~ ( AndKw ~ Primary )* }
+// The W3C grammar (Manchester Syntax, section 2.4) has a second form,
+// `classIRI 'that' [ 'not' ] restriction { 'and' [ 'not' ] restriction }`:
+// `:Device that :locatedIn value :hall_A` is `:Device and (:locatedIn value :hall_A)`.
+Conjunction = {
+    ClassIRI ~ ThatKw ~ ThatPrimary ~ ( AndKw ~ ThatPrimary )*
+  | Primary ~ ( AndKw ~ Primary )*
+}
+
+// A restriction after `that`, negated or not.
+ThatPrimary = _{ Primary }
 
 // highest: "not" prefix + restriction/atomic
 
