@@ -60,6 +60,13 @@ macro_rules! ok_some {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Ord, PartialOrd)]
 pub struct BNode<A: ForIRI>(A);
 
+impl<A: ForIRI> BNode<A> {
+    /// A blank node with the label `label`.
+    pub fn new(label: A) -> Self {
+        BNode(label)
+    }
+}
+
 // The order of the variants in the enum is crucial for round-tripping.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Term<A: ForIRI> {
@@ -226,6 +233,17 @@ impl<A: ForIRI> Build<A> {
         let term = self.substitute_term(term);
 
         PosTriple(term, pos)
+    }
+
+    /// A triple for `OntologyParser::new`, with the RDF, RDFS, OWL
+    /// and SWRL vocabulary substituted as when reading RDF.
+    pub fn rdf_triple(
+        &self,
+        subject: Term<A>,
+        predicate: Term<A>,
+        object: Term<A>,
+    ) -> PosTriple<A> {
+        self.substitute_triple(PosTriple([subject, predicate, object], 0))
     }
 
     fn convert_substitute_triple(&self, rio_triple: Triple, pos: u64) -> PosTriple<A> {
@@ -3054,6 +3072,51 @@ mod test {
 </rdf:RDF>"##
         );
         read_ok(&mut doc.as_bytes())
+    }
+
+    #[test]
+    fn triples_read_like_text() {
+        let text: SetOntology<_> = nary(
+            r##"  <owl:Class rdf:about="#A">
+    <rdfs:subClassOf xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+      <owl:Restriction>
+        <owl:onProperty rdf:resource="#p"/>
+        <owl:someValuesFrom rdf:resource="#B"/>
+      </owl:Restriction>
+    </rdfs:subClassOf>
+  </owl:Class>
+  <owl:Class rdf:about="#B"/>
+  <owl:ObjectProperty rdf:about="#p"/>"##,
+        )
+        .into();
+
+        let b = Build::new_rc();
+        let iri = |s: &str| Term::Iri(b.iri(format!("http://www.example.com/{s}")));
+        let rdf =
+            |s: &str| Term::Iri(b.iri(format!("http://www.w3.org/1999/02/22-rdf-syntax-ns#{s}")));
+        let rdfs = |s: &str| Term::Iri(b.iri(format!("http://www.w3.org/2000/01/rdf-schema#{s}")));
+        let owl = |s: &str| Term::Iri(b.iri(format!("http://www.w3.org/2002/07/owl#{s}")));
+        let r = Term::BNode(BNode::new("r".to_string().into()));
+        let triples = vec![
+            b.rdf_triple(iri("iri"), rdf("type"), owl("Ontology")),
+            b.rdf_triple(iri("iri#A"), rdf("type"), owl("Class")),
+            b.rdf_triple(r.clone(), rdf("type"), owl("Restriction")),
+            b.rdf_triple(r.clone(), owl("onProperty"), iri("iri#p")),
+            b.rdf_triple(r.clone(), owl("someValuesFrom"), iri("iri#B")),
+            b.rdf_triple(iri("iri#A"), rdfs("subClassOf"), r),
+            b.rdf_triple(iri("iri#B"), rdf("type"), owl("Class")),
+            b.rdf_triple(iri("iri#p"), rdf("type"), owl("ObjectProperty")),
+        ];
+        let parser: OntologyParser<_, Rc<AnnotatedComponent<RcStr>>, ConcreteRDFOntology<_, _>, _> =
+            OntologyParser::new(triples, ParserConfiguration::new(&b));
+        let (ont, incomp) = parser.parse().unwrap();
+        assert!(incomp.is_complete());
+        let ont: SetOntology<_> = ont.into();
+
+        assert_eq!(
+            normalize(ont.into_iter().collect()),
+            normalize(text.into_iter().collect())
+        );
     }
 
     #[test]
