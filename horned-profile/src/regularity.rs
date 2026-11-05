@@ -27,7 +27,7 @@
 use std::collections::{HashMap, HashSet};
 
 use horned_owl::model::{
-    Component, ForIRI, ObjectProperty, ObjectPropertyExpression, Ontology,
+    AnnotatedComponent, Component, ForIRI, ObjectProperty, ObjectPropertyExpression, Ontology,
     SubObjectPropertyExpression,
 };
 
@@ -37,9 +37,16 @@ use horned_owl::model::{
 ///
 /// Empty if the role hierarchy's chain axioms are acyclic.
 pub fn chain_cycles<A: ForIRI, O: Ontology<A>>(o: &O) -> Vec<Vec<ObjectProperty<A>>> {
+    chain_cycles_of(o.iter())
+}
+
+/// [`chain_cycles`] over `components`; only property chains matter.
+pub(crate) fn chain_cycles_of<'a, A: ForIRI + 'a>(
+    components: impl Iterator<Item = &'a AnnotatedComponent<A>>,
+) -> Vec<Vec<ObjectProperty<A>>> {
     let mut edges: HashMap<ObjectProperty<A>, HashSet<ObjectProperty<A>>> = HashMap::new();
 
-    for ac in o.iter() {
+    for ac in components {
         if let Component::SubObjectPropertyOf(sopo) = &ac.component
             && let SubObjectPropertyExpression::ObjectPropertyChain(chain) = &sopo.sub
             && chain.len() >= 2

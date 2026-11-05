@@ -42,7 +42,10 @@ pub fn check<A: ForIRI, O: Ontology<A>>(o: &O) -> ProfileReport<A> {
 }
 
 /// Checks `ac` against the QL profile, pushing any violations onto `out`.
-fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
+pub(crate) fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
+    if crate::el::uses_anonymous_individual(ac) {
+        out.push(Violation::UseOfAnonymousIndividual { axiom: ac.clone() });
+    }
     match &ac.component {
         Component::SubClassOf(x) => {
             check_sub(&x.sub, ac, out);
@@ -165,6 +168,18 @@ fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>
         // axiom, only QL rejects it.
         Component::SameIndividual(_) => {
             out.push(banned(ac, "SameIndividual is not permitted in QL"));
+        }
+        Component::NegativeObjectPropertyAssertion(_) => {
+            out.push(banned(
+                ac,
+                "NegativeObjectPropertyAssertion is not permitted in QL",
+            ));
+        }
+        Component::NegativeDataPropertyAssertion(_) => {
+            out.push(banned(
+                ac,
+                "NegativeDataPropertyAssertion is not permitted in QL",
+            ));
         }
         _ => {}
     }
@@ -290,6 +305,7 @@ fn is_thing<A: ForIRI>(ce: &ClassExpression<A>) -> bool {
 fn is_ql_data_range<A: ForIRI>(dr: &DataRange<A>) -> bool {
     match dr {
         DataRange::Datatype(dt) => crate::datatypes::is_el_or_ql_datatype(dt.0.as_ref()),
+        DataRange::DataIntersectionOf(drs) => drs.iter().all(is_ql_data_range),
         _ => false,
     }
 }

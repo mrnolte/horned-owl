@@ -9,16 +9,20 @@
 //! [`el::check`], [`ql::check`], [`rl::check`]. [`check`] and
 //! [`conformant_profiles`] dispatch across all four by [`Profile`].
 
+mod analysis;
 mod datatypes;
 pub mod declared;
 pub mod el;
+pub mod expressivity;
 pub mod owl2dl;
 pub mod ql;
 pub mod regularity;
 pub mod rl;
 pub mod simple_property;
 
+pub use analysis::Analysis;
 pub use declared::DeclaredEntities;
+pub use expressivity::{Construct, Expressivity};
 pub use simple_property::SimplePropertyAnalysis;
 
 use horned_owl::model::{
@@ -178,6 +182,16 @@ pub enum Violation<A: ForIRI> {
     UseOfDataOneOfWithMultipleLiterals { axiom: AnnotatedComponent<A> },
     /// EL-specific: object property inverses are not permitted at all.
     UseOfObjectPropertyInverse { axiom: AnnotatedComponent<A> },
+    /// EL/QL-specific: an anonymous individual where the grammar has
+    /// `Individual := NamedIndividual`.
+    UseOfAnonymousIndividual { axiom: AnnotatedComponent<A> },
+    /// EL-specific: `axiom` is a property chain whose super-property has
+    /// the range `ce` (directly or through super-properties), but the last
+    /// property of the chain does not.
+    UseOfPropertyChainWithoutRangeOnLastProperty {
+        axiom: AnnotatedComponent<A>,
+        ce: ClassExpression<A>,
+    },
     /// This whole axiom *kind* isn't permitted in the profile, regardless
     /// of its content -- e.g. `FunctionalObjectProperty` in EL. A catch-all
     /// rather than one variant per banned axiom kind across three profiles.
