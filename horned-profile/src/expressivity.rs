@@ -386,3 +386,181 @@ impl fmt::Display for Expressivity {
         self.constructs().try_for_each(|c| f.write_str(c.as_str()))
     }
 }
+
+impl Expressivity {
+    /// Whether every construct of `self` is in `target`, read as a limit:
+    /// a letter allows what the name absorbs into it (`C` allows `E` and
+    /// `U`, `S` is `ALC` with `+`, `Q` allows `N` and `F`, `N` allows `F`,
+    /// `R` allows `H`). `AL` is always allowed.
+    pub fn within(self, target: Self) -> bool {
+        self.beyond(target).0 == 0
+    }
+
+    /// The constructs of `self` that `target`, read as a limit (see
+    /// [`within`](Self::within)), does not allow.
+    pub fn beyond(self, target: Self) -> Self {
+        Self(self.0 & !target.allowed() & !Construct::AL.bit() & !Construct::S.bit())
+    }
+
+    /// Whether `self` has the construct `c` itself (not after the
+    /// simplification of the name).
+    pub fn has(self, c: Construct) -> bool {
+        self.0 & c.bit() != 0
+    }
+
+    /// The constructs `self` allows as a limit.
+    fn allowed(self) -> u16 {
+        use Construct::*;
+        let mut s = self.0 | AL.bit();
+        if s & S.bit() != 0 {
+            s |= C.bit() | Transitive.bit();
+        }
+        if s & C.bit() != 0 {
+            s |= E.bit() | U.bit();
+        }
+        if s & Q.bit() != 0 {
+            s |= N.bit();
+        }
+        if s & N.bit() != 0 {
+            s |= F.bit();
+        }
+        if s & R.bit() != 0 {
+            s |= H.bit();
+        }
+        s
+    }
+}
+
+/// Why a text is not a description logic name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ParseExpressivityError {
+    /// The byte offset in the text where it goes wrong.
+    pub at: usize,
+    /// What is wrong there.
+    pub reason: &'static str,
+}
+
+impl fmt::Display for ParseExpressivityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at {}", self.reason, self.at)
+    }
+}
+
+impl std::error::Error for ParseExpressivityError {}
+
+impl std::str::FromStr for Expressivity {
+    type Err = ParseExpressivityError;
+
+    /// Reads a description logic name such as `ALC`, `SHIQ(D)` or `ALE+`:
+    /// `AL` or `S` first, then letters of [`Construct`] in any order, `+`
+    /// and `(D)` (or `D`) at the end. Each construct at most once.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        use Construct::*;
+        let error = |at, reason| Err(ParseExpressivityError { at, reason });
+        let mut e = Expressivity::default();
+        let rest = if let Some(rest) = text.strip_prefix("AL") {
+            e.add(AL);
+            rest
+        } else if let Some(rest) = text.strip_prefix('S') {
+            // `S` is `ALC` with transitive roles; the name says so, the set holds the constructs.
+            e.add(AL);
+            e.add(C);
+            e.add(Transitive);
+            rest
+        } else if text.is_empty() {
+            return error(0, "empty name");
+        } else {
+            return error(0, "a name starts with AL or S");
+        };
+        let mut at = text.len() - rest.len();
+        let mut chars = rest.chars().peekable();
+        while let Some(c) = chars.next() {
+            let construct = match c {
+                'C' => C,
+                'U' => U,
+                'E' => E,
+                'R' => R,
+                'H' => H,
+                'O' => O,
+                'I' => I,
+                'N' => N,
+                'Q' => Q,
+                'F' => F,
+                '+' => Transitive,
+                'D' if chars.peek().is_none() => D,
+                '(' => {
+                    let tail: String = chars.by_ref().collect();
+                    if tail != "D)" {
+                        return error(at, "only (D) may follow in parentheses");
+                    }
+                    D
+                }
+                _ => return error(at, "not a letter of a description logic name"),
+            };
+            if e.has(construct) {
+                return error(at, "a letter appears twice");
+            }
+            e.add(construct);
+            at += c.len_utf8();
+        }
+        Ok(e)
+    }
+}
+
+#[cfg(test)]
+mod limit_test {
+    use super::{Construct, Expressivity};
+
+    fn name(text: &str) -> Expressivity {
+        text.parse().unwrap_or_else(|e| panic!("{text}: {e}"))
+    }
+
+    fn of(constructs: &[Construct]) -> Expressivity {
+        let mut e = Expressivity::default();
+        constructs.iter().for_each(|c| e.add(*c));
+        e
+    }
+
+    #[test]
+    fn names_read_back() {
+        for text in [
+            "AL",
+            "ALC",
+            "ALE+",
+            "ALEROIF(D)",
+            "ALUHIF+",
+            "S",
+            "SHOIN(D)",
+            "SROIQ(D)",
+            "SHIQ",
+            "ALCH",
+        ] {
+            assert_eq!(name(text).to_string(), text);
+        }
+        assert_eq!(name("SHIQD").to_string(), "SHIQ(D)");
+    }
+
+    #[test]
+    fn bad_names_say_where() {
+        for (text, at) in [("", 0), ("EL", 0), ("ALX", 2), ("ALCC", 3), ("SHIQ(E)", 4), ("ALDC", 2)]
+        {
+            let err = text.parse::<Expressivity>().err();
+            assert_eq!(err.map(|e| e.at), Some(at), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_limit_allows_what_it_absorbs() {
+        use Construct::*;
+        assert!(of(&[E, U]).within(name("ALC")));
+        assert!(of(&[C, Transitive]).within(name("S")));
+        assert!(of(&[F, N]).within(name("SHIQ")));
+        assert!(of(&[H]).within(name("SROIQ")));
+        assert!(!of(&[I]).within(name("ALC")));
+        assert!(!of(&[D]).within(name("SROIQ")));
+        assert!(of(&[D]).within(name("SROIQ(D)")));
+        assert!(!of(&[Q]).within(name("SHIN")));
+        assert_eq!(of(&[C, I, E]).beyond(name("ALE")), of(&[C, I]));
+        assert!(Expressivity::default().within(name("AL")));
+    }
+}
