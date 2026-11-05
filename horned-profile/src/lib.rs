@@ -10,6 +10,7 @@
 //! [`conformant_profiles`] dispatch across all four by [`Profile`].
 
 mod analysis;
+mod chain_range;
 mod datatypes;
 pub mod declared;
 pub mod el;
@@ -18,6 +19,7 @@ pub mod owl2dl;
 pub mod ql;
 pub mod regularity;
 pub mod rl;
+mod roles;
 pub mod simple_property;
 
 pub use analysis::Analysis;

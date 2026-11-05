@@ -3,10 +3,18 @@
 //!
 //! The rules that look at one component alone are evaluated once per
 //! insert and once per remove, and only counted. Declarations and entity
-//! usage are counted per IRI and kind. The role hierarchy (the only global
-//! input of the simple-property and regularity rules) is rebuilt from its
-//! own axioms when one of them changes, at the next query; then only the
-//! components that use a property whose status changed are checked again.
+//! usage are counted per IRI and kind. The global rules keep their own
+//! state and follow each change by what it touches:
+//!
+//! - simple properties ([`crate::roles`]): a role axiom carries a change of
+//!   status up or down the role hierarchy from where it starts; then only
+//!   the axioms that need a property whose status changed are checked again,
+//!   and a new axiom that needs simple properties is checked against the
+//!   status as it is;
+//! - regularity: the graph of property chains is searched for cycles again,
+//!   at the next query, only when a chain changed;
+//! - EL's rule on chains and ranges ([`crate::chain_range`]): only the chains
+//!   below a changed range or sub-property edge are checked again.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
@@ -17,9 +25,10 @@ use horned_owl::model::{
 };
 use horned_owl::ontology::indexed::ForIndex;
 
+use crate::chain_range::ChainRanges;
 use crate::declared::{illegal_pun_kinds, is_builtin, is_reserved_declaration};
 use crate::expressivity::Expressivity;
-use crate::simple_property::SimplePropertyAnalysis;
+use crate::roles::{RoleFacts, SimpleRoles, chain_edges};
 use crate::{Profile, ProfileReport, Violation, el, owl2dl, ql, regularity, rl};
 
 /// The kinds a declaration can be required for.
@@ -64,21 +73,21 @@ pub struct Analysis<A: ForIRI, AA: ForIndex<A> = Rc<AnnotatedComponent<A>>> {
     undeclared: HashSet<(IRI<A>, NamedEntityKind)>,
     punned: HashSet<IRI<A>>,
     reserved: HashSet<IRI<A>>,
-    /// The role hierarchy: the components `SimplePropertyAnalysis` reads.
-    roles: HashSet<AA>,
-    roles_changed: bool,
-    simple: SimplePropertyAnalysis<A>,
+    /// Which properties are composite.
+    roles: SimpleRoles<A>,
+    /// The edges of the property chain graph, counted.
+    chain_edges: HashMap<(ObjectProperty<A>, ObjectProperty<A>), usize>,
+    chains_changed: bool,
     cycles: Vec<Vec<ObjectProperty<A>>>,
-    /// The input of EL's rule on property chains and ranges.
-    chain_ranges: HashSet<AA>,
-    chain_ranges_changed: bool,
-    chain_range_violations: Vec<Violation<A>>,
+    /// EL's rule on property chains and ranges.
+    chain_ranges: ChainRanges<A, AA>,
     /// Components requiring each property expression to be simple.
     requirers: HashMap<ObjectPropertyExpression<A>, HashSet<AA>>,
-    /// Requirers not yet checked against `simple`.
-    unchecked: HashSet<AA>,
-    /// Violations of the simple-property rules among checked requirers.
+    /// Violations of the simple-property rules.
     non_simple: usize,
+    /// Requirers checked again because a property changed status (tests).
+    #[cfg(test)]
+    rechecked: usize,
 }
 
 impl<A: ForIRI, AA: ForIndex<A>> Default for Analysis<A, AA> {
@@ -92,16 +101,15 @@ impl<A: ForIRI, AA: ForIndex<A>> Default for Analysis<A, AA> {
             undeclared: HashSet::new(),
             punned: HashSet::new(),
             reserved: HashSet::new(),
-            roles: HashSet::new(),
-            roles_changed: false,
-            simple: SimplePropertyAnalysis::from_components(std::iter::empty()),
+            roles: SimpleRoles::default(),
+            chain_edges: HashMap::new(),
+            chains_changed: false,
             cycles: Vec::new(),
-            chain_ranges: HashSet::new(),
-            chain_ranges_changed: false,
-            chain_range_violations: Vec::new(),
+            chain_ranges: ChainRanges::default(),
             requirers: HashMap::new(),
-            unchecked: HashSet::new(),
             non_simple: 0,
+            #[cfg(test)]
+            rechecked: 0,
         }
     }
 }
@@ -165,7 +173,7 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
 
     /// The profiles the components conform to, in the order of [`Profile`].
     pub fn profiles(&mut self) -> Vec<Profile> {
-        self.update_roles();
+        self.update_cycles();
         let dl = self.local[0] == 0
             && self.undeclared.is_empty()
             && self.punned.is_empty()
@@ -175,23 +183,24 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
         if !dl {
             return Vec::new();
         }
-        self.update_chain_ranges();
+        self.chain_ranges.update();
         [Profile::OWL2DL, Profile::EL, Profile::QL, Profile::RL]
             .into_iter()
             .filter(|p| self.local[index(*p)] == 0)
-            .filter(|p| *p != Profile::EL || self.chain_range_violations.is_empty())
+            .filter(|p| *p != Profile::EL || self.chain_ranges.count() == 0)
             .collect()
     }
 
     /// Every violation of `profile`; the same as [`crate::check`] on an
     /// ontology of these components, in no particular order.
     pub fn report(&mut self, profile: Profile) -> ProfileReport<A> {
-        self.update_roles();
+        self.update_cycles();
         let mut violations = Vec::new();
+        let composite = |ope: &ObjectPropertyExpression<A>| self.roles.is_composite(ope);
         for member in &self.members {
             let ac = member.borrow();
             owl2dl::local_violations(ac, &mut violations);
-            owl2dl::simple_property_violations_of(ac, &self.simple, &mut violations);
+            owl2dl::simple_property_violations_of(ac, &composite, &mut violations);
             profile_violations(profile, ac, &mut violations);
         }
         violations.extend(
@@ -219,8 +228,8 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
             }
         }));
         if profile == Profile::EL {
-            self.update_chain_ranges();
-            violations.extend(self.chain_range_violations.iter().cloned());
+            self.chain_ranges.update();
+            violations.extend(self.chain_ranges.violations().cloned());
         }
         ProfileReport::new(profile, violations)
     }
@@ -283,89 +292,101 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
             );
         }
 
-        if is_role_axiom(&ac.component) {
-            if add {
-                self.roles.insert(member.clone());
-            } else {
-                self.roles.remove(ac);
+        // A requirer going: its violations go, against the status as it is.
+        let required = owl2dl::simple_property_requirements(ac);
+        if !add && !required.is_empty() {
+            self.non_simple -= self.non_simple_of(ac, &[]);
+            for ope in &required {
+                if let Some(requirers) = self.requirers.get_mut(ope) {
+                    requirers.remove(ac);
+                    if requirers.is_empty() {
+                        self.requirers.remove(ope);
+                    }
+                }
             }
-            self.roles_changed = true;
+        }
+
+        let facts = RoleFacts::of(&ac.component);
+        if !facts.is_empty() {
+            let changed = if add {
+                self.roles.add(&facts)
+            } else {
+                self.roles.remove(&facts)
+            };
+            self.recheck(&changed);
+        }
+
+        for edge in chain_edges(&ac.component) {
+            let n = self.chain_edges.entry(edge.clone()).or_default();
+            step(n, 1);
+            if *n == 0 {
+                self.chain_edges.remove(&edge);
+            }
+            self.chains_changed = true;
         }
 
         if el::is_chain_range_input(&ac.component) {
-            if add {
-                self.chain_ranges.insert(member.clone());
-            } else {
-                self.chain_ranges.remove(ac);
-            }
-            self.chain_ranges_changed = true;
+            self.chain_ranges.change(member, add);
         }
 
-        let required = owl2dl::simple_property_requirements(ac);
-        if required.is_empty() {
+        // A requirer coming: checked against the status as it is.
+        if add && !required.is_empty() {
+            for ope in required {
+                self.requirers
+                    .entry(ope)
+                    .or_default()
+                    .insert(member.clone());
+            }
+            self.non_simple += self.non_simple_of(ac, &[]);
+        }
+    }
+
+    /// Checks again the requirers of the properties in `changed`, whose
+    /// status just flipped.
+    fn recheck(&mut self, changed: &[ObjectProperty<A>]) {
+        if changed.is_empty() {
             return;
         }
-        for ope in required {
-            let requirers = self.requirers.entry(ope.clone()).or_default();
-            if add {
-                requirers.insert(member.clone());
-            } else {
-                requirers.remove(ac);
-                if requirers.is_empty() {
-                    self.requirers.remove(&ope);
-                }
+        let mut affected: HashSet<AA> = HashSet::new();
+        for p in changed {
+            for ope in [
+                ObjectPropertyExpression::ObjectProperty(p.clone()),
+                ObjectPropertyExpression::InverseObjectProperty(p.clone()),
+            ] {
+                affected.extend(self.requirers.get(&ope).into_iter().flatten().cloned());
             }
         }
-        if add {
-            self.unchecked.insert(member.clone());
-        } else if !self.unchecked.remove(ac) {
-            self.non_simple -= non_simple(ac, &self.simple);
-        }
-    }
-
-    /// Rebuilds the role hierarchy if it changed and checks the requirers it
-    /// affects, and those not checked yet.
-    fn update_roles(&mut self) {
-        if self.roles_changed {
-            self.roles_changed = false;
-            let simple = SimplePropertyAnalysis::from_components(
-                self.roles.iter().map(|member| member.borrow()),
-            );
-            self.cycles =
-                regularity::chain_cycles_of(self.roles.iter().map(|member| member.borrow()));
-            let mut affected: HashSet<&AA> = HashSet::new();
-            for ope in self
-                .simple
-                .composites()
-                .symmetric_difference(simple.composites())
+        for requirer in affected {
+            let ac: &AnnotatedComponent<A> = requirer.borrow();
+            self.non_simple -= self.non_simple_of(ac, changed);
+            self.non_simple += self.non_simple_of(ac, &[]);
+            #[cfg(test)]
             {
-                if let Some(requirers) = self.requirers.get(ope) {
-                    affected.extend(
-                        requirers
-                            .iter()
-                            .filter(|r| !self.unchecked.contains((*r).borrow())),
-                    );
-                }
+                self.rechecked += 1;
             }
-            for requirer in affected {
-                let ac = requirer.borrow();
-                self.non_simple -= non_simple(ac, &self.simple);
-                self.non_simple += non_simple(ac, &simple);
-            }
-            self.simple = simple;
-        }
-        for requirer in self.unchecked.drain() {
-            self.non_simple += non_simple(requirer.borrow(), &self.simple);
         }
     }
 
-    /// Recomputes EL's rule on property chains and ranges if its input
-    /// changed.
-    fn update_chain_ranges(&mut self) {
-        if self.chain_ranges_changed {
-            self.chain_ranges_changed = false;
-            self.chain_range_violations =
-                el::chain_range_violations(self.chain_ranges.iter().map(|member| member.borrow()));
+    /// The simple-property violations of `ac` with the status as it was
+    /// before the properties in `flipped` changed.
+    fn non_simple_of(&self, ac: &AnnotatedComponent<A>, flipped: &[ObjectProperty<A>]) -> usize {
+        let composite = |ope: &ObjectPropertyExpression<A>| {
+            self.roles.is_composite(ope) != flipped.contains(&crate::roles::base(ope))
+        };
+        let mut violations = Vec::new();
+        owl2dl::simple_property_violations_of(ac, &composite, &mut violations);
+        violations.len()
+    }
+
+    /// Searches the property chain graph for cycles again if a chain changed.
+    fn update_cycles(&mut self) {
+        if self.chains_changed {
+            self.chains_changed = false;
+            let mut edges: HashMap<ObjectProperty<A>, HashSet<ObjectProperty<A>>> = HashMap::new();
+            for (member, sup) in self.chain_edges.keys() {
+                edges.entry(member.clone()).or_default().insert(sup.clone());
+            }
+            self.cycles = regularity::find_cycles(&edges);
         }
     }
 
@@ -425,12 +446,6 @@ fn profile_violations<A: ForIRI>(
     }
 }
 
-fn non_simple<A: ForIRI>(ac: &AnnotatedComponent<A>, simple: &SimplePropertyAnalysis<A>) -> usize {
-    let mut violations = Vec::new();
-    owl2dl::simple_property_violations_of(ac, simple, &mut violations);
-    violations.len()
-}
-
 fn update<A: ForIRI>(set: &mut HashSet<IRI<A>>, iri: &IRI<A>, member: bool) {
     if member {
         set.insert(iri.clone());
@@ -452,54 +467,52 @@ fn declaration<A: ForIRI>(c: &Component<A>) -> Option<(IRI<A>, NamedEntityKind)>
     Some((iri.clone(), kind))
 }
 
-fn is_role_axiom<A: ForIRI>(c: &Component<A>) -> bool {
-    matches!(
-        c,
-        Component::TransitiveObjectProperty(_)
-            | Component::SubObjectPropertyOf(_)
-            | Component::EquivalentObjectProperties(_)
-            | Component::InverseObjectProperties(_)
-    )
-}
-
 #[cfg(test)]
 mod test {
     use super::Analysis;
     use horned_owl::model::{
-        AnnotatedComponent, Build, ClassExpression, DeclareClass, FunctionalObjectProperty,
-        ObjectPropertyExpression, RcStr, SubClassOf, TransitiveObjectProperty,
+        AnnotatedComponent, Build, Component, FunctionalObjectProperty, ObjectPropertyExpression,
+        RcStr, SubObjectPropertyExpression, SubObjectPropertyOf, TransitiveObjectProperty,
     };
 
-    fn ac(c: impl Into<horned_owl::model::Component<RcStr>>) -> AnnotatedComponent<RcStr> {
+    fn ac(c: impl Into<Component<RcStr>>) -> AnnotatedComponent<RcStr> {
         AnnotatedComponent::from(c.into())
     }
 
+    fn ope(b: &Build<RcStr>, name: &str) -> ObjectPropertyExpression<RcStr> {
+        b.object_property(format!("http://example.com/{name}"))
+            .into()
+    }
+
     #[test]
-    fn class_axioms_leave_the_role_hierarchy_alone() {
+    fn a_role_change_rechecks_only_the_users_of_properties_whose_status_flipped() {
         let b = Build::new_rc();
-        let p: ObjectPropertyExpression<_> = b.object_property("http://example.com/p").into();
+        let (p, q) = (ope(&b, "p"), ope(&b, "q"));
         let mut analysis: Analysis<RcStr> = Analysis::new();
-        analysis.insert(ac(TransitiveObjectProperty(p.clone())).into());
         analysis.insert(ac(FunctionalObjectProperty(p.clone())).into());
+        analysis.insert(ac(FunctionalObjectProperty(q.clone())).into());
+
+        // q becomes composite: only the axiom on q is checked again.
+        analysis.insert(ac(TransitiveObjectProperty(q.clone())).into());
+        assert_eq!((analysis.rechecked, analysis.non_simple), (1, 1));
+
+        // A second reason for q flips nothing.
+        let chain = ac(SubObjectPropertyOf {
+            sub: SubObjectPropertyExpression::ObjectPropertyChain(vec![p.clone(), p.clone()]),
+            sup: q.clone(),
+        });
+        analysis.insert(chain.clone().into());
+        assert_eq!(analysis.rechecked, 1);
+
+        // q stays composite while the chain gives a reason.
+        analysis.remove(&ac(TransitiveObjectProperty(q.clone())));
+        assert_eq!((analysis.rechecked, analysis.non_simple), (1, 1));
+        analysis.remove(&chain);
+        assert_eq!((analysis.rechecked, analysis.non_simple), (2, 0));
+
+        // A new axiom needing a simple property is checked against the status as it is.
+        analysis.insert(ac(TransitiveObjectProperty(p.clone())).into());
+        assert_eq!((analysis.rechecked, analysis.non_simple), (3, 1));
         assert!(analysis.profiles().is_empty());
-        assert!(!analysis.roles_changed);
-
-        let a: ClassExpression<_> = b.class("http://example.com/A").into();
-        analysis.insert(ac(DeclareClass(b.class("http://example.com/A"))).into());
-        analysis.insert(
-            ac(SubClassOf {
-                sub: a.clone(),
-                sup: a,
-            })
-            .into(),
-        );
-        assert!(!analysis.roles_changed);
-        assert!(analysis.unchecked.is_empty());
-
-        analysis.remove(&ac(TransitiveObjectProperty(p)));
-        assert!(analysis.roles_changed);
-        assert_eq!(analysis.non_simple, 1);
-        analysis.profiles();
-        assert_eq!(analysis.non_simple, 0);
     }
 }
