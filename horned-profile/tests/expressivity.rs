@@ -44,11 +44,16 @@ fn names_follow_the_owl_api() {
             "SubClassOf(:A ObjectComplementOf(ObjectSomeValuesFrom(:p :C)))",
             "ALC",
         ),
-        ("DisjointClasses(:A :B)", "ALC"),
-        ("DisjointUnion(:A :B :C)", "ALC"),
+        // Atomic negation (OWL API: ALC).
+        ("DisjointClasses(:A :B)", "AL"),
+        ("DisjointClasses(:A ObjectSomeValuesFrom(:p :B))", "ALC"),
+        ("DisjointUnion(:A :B :C)", "ALU"),
+        ("DisjointUnion(:A :B ObjectSomeValuesFrom(:p :B))", "ALC"),
         ("DifferentIndividuals(:a :b)", "ALCO"),
         ("SameIndividual(:a :b)", "ALO"),
-        ("SubClassOf(:A ObjectOneOf(:a))", "ALUO"),
+        // One nominal, no union (OWL API: ALUO).
+        ("SubClassOf(:A ObjectOneOf(:a))", "ALO"),
+        ("SubClassOf(:A ObjectOneOf(:a :b))", "ALUO"),
         ("SubClassOf(:A ObjectHasValue(:p :a))", "ALEO"),
         (
             "SubClassOf(:A ObjectSomeValuesFrom(ObjectInverseOf(:p) :B))",
@@ -73,7 +78,10 @@ fn names_follow_the_owl_api() {
             "TransitiveObjectProperty(:p) SubClassOf(:A ObjectSomeValuesFrom(:p :B))",
             "ALE+",
         ),
-        ("TransitiveObjectProperty(:p) DisjointClasses(:A :B)", "S"),
+        (
+            "TransitiveObjectProperty(:p) DisjointClasses(:A ObjectComplementOf(:B))",
+            "S",
+        ),
         ("FunctionalObjectProperty(:p)", "ALF"),
         ("InverseFunctionalObjectProperty(:p)", "ALIF"),
         ("SubClassOf(:A ObjectMaxCardinality(1 :p))", "ALN"),
@@ -110,14 +118,14 @@ fn names_follow_the_owl_api() {
         ("SubClassOf(:A ObjectComplementOf(:B))", "AL"),
         (
             "TransitiveObjectProperty(:p) SubObjectPropertyOf(:p :q) InverseObjectProperties(:p :r) \
-             DisjointClasses(:A :B) SubClassOf(:A ObjectOneOf(:a)) \
+             DisjointClasses(:A ObjectComplementOf(:B)) SubClassOf(:A ObjectOneOf(:a)) \
              SubClassOf(:A ObjectMinCardinality(2 :p)) DataPropertyRange(:d xsd:string)",
             "SHOIN(D)",
         ),
         (
             "TransitiveObjectProperty(:p) SubObjectPropertyOf(:p :q) \
              SubObjectPropertyOf(ObjectPropertyChain(:p :q) :r) InverseObjectProperties(:p :r) \
-             DisjointClasses(:A :B) SubClassOf(:A ObjectOneOf(:a)) \
+             DisjointClasses(:A ObjectComplementOf(:B)) SubClassOf(:A ObjectOneOf(:a)) \
              SubClassOf(:A ObjectMinCardinality(2 :p :B)) DataPropertyRange(:d xsd:string)",
             "SROIQ(D)",
         ),
