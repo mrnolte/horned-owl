@@ -48,13 +48,13 @@ DisjointClasses(:A ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	F
 ObjectPropertyDomain(:p ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	T	
 ObjectPropertyRange(:p ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	T	
 ClassAssertion(ObjectComplementOf(ObjectSomeValuesFrom(:p :B)) :a)	ALC	T	F	F	T	
-SubClassOf(ObjectOneOf(:a) :A)	ALUO	T	T	F	T	
-SubClassOf(:A ObjectOneOf(:a))	ALUO	T	T	F	F	
-EquivalentClasses(:A ObjectOneOf(:a))	ALUO	T	T	F	F	
+SubClassOf(ObjectOneOf(:a) :A)	ALO	T	T	F	T	OWL API: ALUO; ObjectOneOf with one individual is a nominal, not a union
+SubClassOf(:A ObjectOneOf(:a))	ALO	T	T	F	F	OWL API: ALUO; ObjectOneOf with one individual is a nominal, not a union
+EquivalentClasses(:A ObjectOneOf(:a))	ALO	T	T	F	F	OWL API: ALUO; ObjectOneOf with one individual is a nominal, not a union
 DisjointClasses(:A ObjectOneOf(:a))	ALCO	T	T	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
-ObjectPropertyDomain(:p ObjectOneOf(:a))	ALUO	T	T	F	F	
-ObjectPropertyRange(:p ObjectOneOf(:a))	ALUO	T	T	F	F	
-ClassAssertion(ObjectOneOf(:a) :a)	ALUO	T	T	F	F	
+ObjectPropertyDomain(:p ObjectOneOf(:a))	ALO	T	T	F	F	OWL API: ALUO; ObjectOneOf with one individual is a nominal, not a union
+ObjectPropertyRange(:p ObjectOneOf(:a))	ALO	T	T	F	F	OWL API: ALUO; ObjectOneOf with one individual is a nominal, not a union
+ClassAssertion(ObjectOneOf(:a) :a)	ALO	T	T	F	F	OWL API: ALUO; ObjectOneOf with one individual is a nominal, not a union
 SubClassOf(ObjectOneOf(:a :b) :A)	ALUO	T	F	F	T	
 SubClassOf(:A ObjectOneOf(:a :b))	ALUO	T	F	F	F	
 EquivalentClasses(:A ObjectOneOf(:a :b))	ALUO	T	F	F	F	
@@ -223,7 +223,7 @@ NegativeObjectPropertyAssertion(:p :a :b)	AL	T	T	F	T
 DataPropertyAssertion(:d :a "1"^^xsd:integer)	AL(D)	T	T	T	T	
 NegativeDataPropertyAssertion(:d :a "1"^^xsd:integer)	AL(D)	T	T	F	T	
 ObjectPropertyAssertion(:p :a _:x)	AL	T	F	F	T	
-DisjointUnion(:A :B :C)	ALC	T	F	F	F	
+DisjointUnion(:A :B :C)	ALU	T	F	F	F	OWL API: ALC; disjointness of named classes is atomic negation
 SubClassOf(:A :Undeclared)	AL	F	F	F	F	
 TransitiveObjectProperty(:p) FunctionalObjectProperty(:p)	ALF+	F	F	F	F	
 TransitiveObjectProperty(:p) SubClassOf(:A ObjectMaxCardinality(1 :p))	ALN+	F	F	F	F	
