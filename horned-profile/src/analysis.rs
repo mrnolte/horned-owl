@@ -192,16 +192,37 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
     }
 
     /// Every violation of `profile`; the same as [`crate::check`] on an
-    /// ontology of these components, in no particular order.
+    /// ontology of these components, in no particular order: the
+    /// [`local_violations`] of each component and the
+    /// [`global_violations`](Self::global_violations).
     pub fn report(&mut self, profile: Profile) -> ProfileReport<A> {
+        let mut violations: Vec<Violation<A>> = self
+            .members
+            .iter()
+            .flat_map(|member| local_violations(profile, member.borrow()))
+            .collect();
+        violations.extend(self.global_violations(profile));
+        ProfileReport::new(profile, violations)
+    }
+
+    /// The violations of `profile` that need the other components: simple
+    /// properties, declarations, punning, reserved vocabulary, cycles of
+    /// property chains and, for EL, ranges of property chains. Takes time in
+    /// what violates, not in the number of components: with
+    /// [`local_violations`] per component, a caller can tell violations as it
+    /// finds them and these once the components are in.
+    pub fn global_violations(&mut self, profile: Profile) -> Vec<Violation<A>> {
         self.update_cycles();
         let mut violations = Vec::new();
         let composite = |ope: &ObjectPropertyExpression<A>| self.roles.is_composite(ope);
-        for member in &self.members {
-            let ac = member.borrow();
-            owl2dl::local_violations(ac, &mut violations);
-            owl2dl::simple_property_violations_of(ac, &composite, &mut violations);
-            profile_violations(profile, ac, &mut violations);
+        let requirers: HashSet<&AA> = self
+            .requirers
+            .iter()
+            .filter(|(ope, _)| composite(ope))
+            .flat_map(|(_, members)| members)
+            .collect();
+        for member in requirers {
+            owl2dl::simple_property_violations_of(member.borrow(), &composite, &mut violations);
         }
         violations.extend(
             self.undeclared
@@ -231,7 +252,7 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
             self.chain_ranges.update();
             violations.extend(self.chain_ranges.violations().cloned());
         }
-        ProfileReport::new(profile, violations)
+        violations
     }
 
     /// Adds (`add`) or subtracts the contributions of `member`.
@@ -431,6 +452,20 @@ fn index(profile: Profile) -> usize {
     }
 }
 
+/// The violations of `profile` that `ac` has by itself, whatever the other
+/// components are: too few operands, a redefined built-in datatype and, for
+/// EL, QL and RL, the grammar of the profile (a profile includes the rules of
+/// OWL 2 DL). The rest comes from [`Analysis::global_violations`].
+pub fn local_violations<A: ForIRI>(
+    profile: Profile,
+    ac: &AnnotatedComponent<A>,
+) -> Vec<Violation<A>> {
+    let mut violations = Vec::new();
+    owl2dl::local_violations(ac, &mut violations);
+    profile_violations(profile, ac, &mut violations);
+    violations
+}
+
 /// Pushes the violations of `ac` against the rules `profile` adds to OWL 2
 /// DL that look at one component alone.
 fn profile_violations<A: ForIRI>(
@@ -514,5 +549,51 @@ mod test {
         analysis.insert(ac(TransitiveObjectProperty(p.clone())).into());
         assert_eq!((analysis.rechecked, analysis.non_simple), (3, 1));
         assert!(analysis.profiles().is_empty());
+    }
+
+    #[test]
+    fn local_violations_need_no_analysis_and_global_ones_are_the_rest() {
+        use super::local_violations;
+        use crate::Profile;
+        use horned_owl::model::{ClassExpression, DeclareClass, DeclareObjectProperty, SubClassOf};
+        let b = Build::new_rc();
+        let p = b.object_property("http://example.com/p");
+        let only = ac(SubClassOf {
+            sub: ClassExpression::Class(b.class("http://example.com/A")),
+            sup: ClassExpression::ObjectAllValuesFrom {
+                ope: p.clone().into(),
+                bce: Box::new(ClassExpression::Class(b.class("http://example.com/B"))),
+            },
+        });
+        // `only` is outside EL by itself, before any other component is known.
+        assert_eq!(local_violations(Profile::EL, &only).len(), 1);
+        assert!(local_violations(Profile::OWL2DL, &only).is_empty());
+
+        let mut analysis: Analysis<RcStr> = Analysis::new();
+        for c in [
+            only.clone(),
+            ac(DeclareClass(b.class("http://example.com/A"))),
+            ac(DeclareClass(b.class("http://example.com/B"))),
+            ac(DeclareObjectProperty(p.clone())),
+        ] {
+            analysis.insert(c.into());
+        }
+        assert!(analysis.global_violations(Profile::EL).is_empty());
+        assert_eq!(analysis.report(Profile::EL).violations().len(), 1);
+
+        // A cardinality on a transitive property: global, it needs the property's status.
+        analysis.insert(ac(TransitiveObjectProperty(p.clone().into())).into());
+        analysis.insert(
+            ac(SubClassOf {
+                sub: ClassExpression::Class(b.class("http://example.com/A")),
+                sup: ClassExpression::ObjectMaxCardinality {
+                    n: 1,
+                    ope: p.clone().into(),
+                    bce: Box::new(ClassExpression::Class(b.class("http://example.com/B"))),
+                },
+            })
+            .into(),
+        );
+        assert_eq!(analysis.global_violations(Profile::OWL2DL).len(), 1);
     }
 }

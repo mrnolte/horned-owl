@@ -22,9 +22,9 @@ pub mod rl;
 mod roles;
 pub mod simple_property;
 
-pub use analysis::Analysis;
+pub use analysis::{Analysis, local_violations};
 pub use declared::DeclaredEntities;
-pub use expressivity::{Construct, Expressivity};
+pub use expressivity::{Construct, Expressivity, ParseExpressivityError};
 pub use simple_property::SimplePropertyAnalysis;
 
 use horned_owl::model::{
