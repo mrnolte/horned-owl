@@ -122,11 +122,6 @@ impl<A: ForIRI> SimplePropertyAnalysis<A> {
         SimplePropertyAnalysis(composite)
     }
 
-    /// The composite property expressions.
-    pub(crate) fn composites(&self) -> &HashSet<ObjectPropertyExpression<A>> {
-        &self.0
-    }
-
     /// Returns `true` if `ope` is simple (not composite).
     pub fn is_simple(&self, ope: &ObjectPropertyExpression<A>) -> bool {
         !self.0.contains(ope)
