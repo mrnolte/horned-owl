@@ -9,7 +9,7 @@
 
 use horned_owl::vocab;
 
-pub(crate) const EL_QL_DATATYPE_ALLOWLIST: [&str; 13] = [
+pub(crate) const EL_QL_DATATYPE_ALLOWLIST: [&str; 14] = [
     "http://www.w3.org/2001/XMLSchema#string",
     "http://www.w3.org/2001/XMLSchema#normalizedString",
     "http://www.w3.org/2001/XMLSchema#token",
@@ -22,6 +22,7 @@ pub(crate) const EL_QL_DATATYPE_ALLOWLIST: [&str; 13] = [
     "http://www.w3.org/2001/XMLSchema#nonNegativeInteger",
     "http://www.w3.org/2001/XMLSchema#decimal",
     "http://www.w3.org/2001/XMLSchema#dateTime",
+    "http://www.w3.org/2001/XMLSchema#dateTimeStamp",
     "http://www.w3.org/2001/XMLSchema#anyURI",
 ];
 

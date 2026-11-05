@@ -69,6 +69,10 @@ pub struct Analysis<A: ForIRI, AA: ForIndex<A> = Rc<AnnotatedComponent<A>>> {
     roles_changed: bool,
     simple: SimplePropertyAnalysis<A>,
     cycles: Vec<Vec<ObjectProperty<A>>>,
+    /// The input of EL's rule on property chains and ranges.
+    chain_ranges: HashSet<AA>,
+    chain_ranges_changed: bool,
+    chain_range_violations: Vec<Violation<A>>,
     /// Components requiring each property expression to be simple.
     requirers: HashMap<ObjectPropertyExpression<A>, HashSet<AA>>,
     /// Requirers not yet checked against `simple`.
@@ -92,6 +96,9 @@ impl<A: ForIRI, AA: ForIndex<A>> Default for Analysis<A, AA> {
             roles_changed: false,
             simple: SimplePropertyAnalysis::from_components(std::iter::empty()),
             cycles: Vec::new(),
+            chain_ranges: HashSet::new(),
+            chain_ranges_changed: false,
+            chain_range_violations: Vec::new(),
             requirers: HashMap::new(),
             unchecked: HashSet::new(),
             non_simple: 0,
@@ -168,9 +175,11 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
         if !dl {
             return Vec::new();
         }
+        self.update_chain_ranges();
         [Profile::OWL2DL, Profile::EL, Profile::QL, Profile::RL]
             .into_iter()
             .filter(|p| self.local[index(*p)] == 0)
+            .filter(|p| *p != Profile::EL || self.chain_range_violations.is_empty())
             .collect()
     }
 
@@ -209,6 +218,10 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
                 cycle: cycle.clone(),
             }
         }));
+        if profile == Profile::EL {
+            self.update_chain_ranges();
+            violations.extend(self.chain_range_violations.iter().cloned());
+        }
         ProfileReport::new(profile, violations)
     }
 
@@ -279,6 +292,15 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
             self.roles_changed = true;
         }
 
+        if el::is_chain_range_input(&ac.component) {
+            if add {
+                self.chain_ranges.insert(member.clone());
+            } else {
+                self.chain_ranges.remove(ac);
+            }
+            self.chain_ranges_changed = true;
+        }
+
         let required = owl2dl::simple_property_requirements(ac);
         if required.is_empty() {
             return;
@@ -334,6 +356,16 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
         }
         for requirer in self.unchecked.drain() {
             self.non_simple += non_simple(requirer.borrow(), &self.simple);
+        }
+    }
+
+    /// Recomputes EL's rule on property chains and ranges if its input
+    /// changed.
+    fn update_chain_ranges(&mut self) {
+        if self.chain_ranges_changed {
+            self.chain_ranges_changed = false;
+            self.chain_range_violations =
+                el::chain_range_violations(self.chain_ranges.iter().map(|member| member.borrow()));
         }
     }
 
