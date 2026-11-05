@@ -19,6 +19,8 @@ last column says why:
 | --- | --- | --- | --- |
 | `ObjectComplementOf(:B)` with a named class | `ALC` | `AL` | Atomic negation is part of `AL`. The OWL API tests whether the complement itself is atomic, which it never is. |
 | `DatatypeDefinition`, `HasKey` with a data property | no `(D)` | `(D)` | Both use data; the OWL API skips the two axioms. |
+| `DisjointClasses`, `DisjointUnion` of named classes | `C` | no `C` | `A ⊑ ¬B` is atomic negation, part of `AL`. |
+| `ObjectOneOf` with one individual, `DifferentIndividuals` | `U` | no `U` | A single nominal is no union; `{a} ⊑ ¬{b}` needs none. |
 | `DisjointClasses` with `ObjectSomeValuesFrom`, `ObjectUnionOf`, `ObjectOneOf`, `DataSomeValuesFrom` | not RL | RL | RL's `DisjointClasses` takes `subClassExpression`s (Profiles §4.2.5, §4.2.3). |
 | a datatype the ontology declares or defines | not EL, QL, RL | EL, QL, RL | The grammars of all three profiles allow `DatatypeDefinition`; the lists of supported datatypes name the built-in ones. |
 

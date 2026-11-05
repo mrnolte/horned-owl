@@ -231,21 +231,21 @@ fn simple_property_violations<A: ForIRI, O: Ontology<A>>(o: &O) -> Vec<Violation
     let analysis = SimplePropertyAnalysis::from_ontology(o);
     let mut violations = Vec::new();
     for ac in o.iter() {
-        simple_property_violations_of(ac, &analysis, &mut violations);
+        simple_property_violations_of(ac, &|ope| analysis.is_composite(ope), &mut violations);
     }
     violations
 }
 
 /// Pushes the violations of `ac` that use a composite object property where
-/// a simple one is required, per `analysis`.
+/// a simple one is required, per `composite`.
 pub(crate) fn simple_property_violations_of<A: ForIRI>(
     ac: &AnnotatedComponent<A>,
-    analysis: &SimplePropertyAnalysis<A>,
+    composite: &dyn Fn(&ObjectPropertyExpression<A>) -> bool,
     violations: &mut Vec<Violation<A>>,
 ) {
     let usage = simple_property_usage(ac);
     for ope in &usage.has_self {
-        if analysis.is_composite(ope) {
+        if composite(ope) {
             violations.push(Violation::UseOfNonSimplePropertyInObjectHasSelf {
                 axiom: ac.clone(),
                 ope: ope.clone(),
@@ -253,7 +253,7 @@ pub(crate) fn simple_property_violations_of<A: ForIRI>(
         }
     }
     for ope in &usage.cardinality {
-        if analysis.is_composite(ope) {
+        if composite(ope) {
             violations.push(Violation::UseOfNonSimplePropertyInCardinalityRestriction {
                 axiom: ac.clone(),
                 ope: ope.clone(),
@@ -263,28 +263,28 @@ pub(crate) fn simple_property_violations_of<A: ForIRI>(
 
     match &ac.component {
         Component::DisjointObjectProperties(x) => {
-            if x.0.iter().any(|ope| analysis.is_composite(ope)) {
+            if x.0.iter().any(composite) {
                 violations.push(Violation::UseOfNonSimplePropertyInDisjointPropertiesAxiom {
                     axiom: ac.clone(),
                 });
             }
         }
-        Component::IrreflexiveObjectProperty(x) if analysis.is_composite(&x.0) => {
+        Component::IrreflexiveObjectProperty(x) if composite(&x.0) => {
             violations.push(
                 Violation::UseOfNonSimplePropertyInIrreflexivePropertyAxiom { axiom: ac.clone() },
             );
         }
-        Component::AsymmetricObjectProperty(x) if analysis.is_composite(&x.0) => {
+        Component::AsymmetricObjectProperty(x) if composite(&x.0) => {
             violations.push(Violation::UseOfNonSimplePropertyInAsymmetricPropertyAxiom {
                 axiom: ac.clone(),
             });
         }
-        Component::FunctionalObjectProperty(x) if analysis.is_composite(&x.0) => {
+        Component::FunctionalObjectProperty(x) if composite(&x.0) => {
             violations.push(Violation::UseOfNonSimplePropertyInFunctionalPropertyAxiom {
                 axiom: ac.clone(),
             });
         }
-        Component::InverseFunctionalObjectProperty(x) if analysis.is_composite(&x.0) => {
+        Component::InverseFunctionalObjectProperty(x) if composite(&x.0) => {
             violations.push(
                 Violation::UseOfNonSimplePropertyInInverseFunctionalPropertyAxiom {
                     axiom: ac.clone(),

@@ -17,6 +17,11 @@
 //!   which it never is, so it always reports `C`.
 //! - `DatatypeDefinition`, and `HasKey` with a data property, use data
 //!   (`(D)`); the OWL API skips both axioms.
+//! - `DisjointClasses` and `DisjointUnion` of named classes only need
+//!   atomic negation (`A ⊑ ¬B`), not `C`; the OWL API always adds `C`.
+//! - `ObjectOneOf` with one individual is a nominal, not a union (`U`), and
+//!   `DifferentIndividuals` needs no union either; the OWL API adds `U` to
+//!   both.
 
 use std::fmt;
 
@@ -186,13 +191,18 @@ impl Expressivity {
                 self.class(&x.sup);
             }
             Component::EquivalentClasses(x) => x.0.iter().for_each(|ce| self.class(ce)),
+            // A ⊑ ¬B: atomic negation (in AL) when all operands are named.
             Component::DisjointClasses(x) => {
-                self.add(C);
+                if !all_named(&x.0) {
+                    self.add(C);
+                }
                 x.0.iter().for_each(|ce| self.class(ce));
             }
             Component::DisjointUnion(x) => {
                 self.add(U);
-                self.add(C);
+                if !all_named(&x.1) {
+                    self.add(C);
+                }
                 x.1.iter().for_each(|ce| self.class(ce));
             }
             Component::SubObjectPropertyOf(x) => {
@@ -274,8 +284,8 @@ impl Expressivity {
                 }
             }
             Component::SameIndividual(_) => self.add(O),
+            // {a} ⊑ ¬{b}: nominals and complex negation, no union.
             Component::DifferentIndividuals(_) => {
-                self.add(U);
                 self.add(O);
                 self.add(C);
             }
@@ -308,8 +318,11 @@ impl Expressivity {
                 }
                 self.class(x);
             }
-            ClassExpression::ObjectOneOf(_) => {
-                self.add(U);
+            // One individual is a nominal; more are a union of nominals.
+            ClassExpression::ObjectOneOf(xs) => {
+                if xs.len() > 1 {
+                    self.add(U);
+                }
                 self.add(O);
             }
             ClassExpression::ObjectSomeValuesFrom { ope, bce } => {
@@ -354,6 +367,10 @@ impl Expressivity {
             }
         }
     }
+}
+
+fn all_named<A: ForIRI>(ces: &[ClassExpression<A>]) -> bool {
+    ces.iter().all(|ce| matches!(ce, ClassExpression::Class(_)))
 }
 
 fn is_thing<A: ForIRI>(ce: &ClassExpression<A>) -> bool {

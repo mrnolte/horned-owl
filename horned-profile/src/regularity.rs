@@ -83,7 +83,7 @@ enum Colour {
 /// Returns every cycle in the directed graph described by `edges` (source
 /// property -> set of target properties), via depth-first search from
 /// each unvisited node.
-fn find_cycles<A: ForIRI>(
+pub(crate) fn find_cycles<A: ForIRI>(
     edges: &HashMap<ObjectProperty<A>, HashSet<ObjectProperty<A>>>,
 ) -> Vec<Vec<ObjectProperty<A>>> {
     let mut colour: HashMap<ObjectProperty<A>, Colour> = HashMap::new();
