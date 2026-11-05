@@ -1,0 +1,236 @@
+# axioms	name	DL	EL	QL	RL	deviation from the OWL API
+SubClassOf(ObjectSomeValuesFrom(:p :B) :A)	ALE	T	T	F	T	
+SubClassOf(:A ObjectSomeValuesFrom(:p :B))	ALE	T	T	T	F	
+EquivalentClasses(:A ObjectSomeValuesFrom(:p :B))	ALE	T	T	F	F	
+DisjointClasses(:A ObjectSomeValuesFrom(:p :B))	ALC	T	T	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p ObjectSomeValuesFrom(:p :B))	ALE	T	T	T	F	
+ObjectPropertyRange(:p ObjectSomeValuesFrom(:p :B))	ALE	T	T	T	F	
+ClassAssertion(ObjectSomeValuesFrom(:p :B) :a)	ALE	T	T	F	F	
+SubClassOf(ObjectSomeValuesFrom(:p owl:Thing) :A)	AL	T	T	T	T	
+SubClassOf(:A ObjectSomeValuesFrom(:p owl:Thing))	AL	T	T	T	F	
+EquivalentClasses(:A ObjectSomeValuesFrom(:p owl:Thing))	AL	T	T	T	F	
+DisjointClasses(:A ObjectSomeValuesFrom(:p owl:Thing))	ALC	T	T	T	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p ObjectSomeValuesFrom(:p owl:Thing))	AL	T	T	T	F	
+ObjectPropertyRange(:p ObjectSomeValuesFrom(:p owl:Thing))	AL	T	T	T	F	
+ClassAssertion(ObjectSomeValuesFrom(:p owl:Thing) :a)	AL	T	T	F	F	
+SubClassOf(ObjectAllValuesFrom(:p :B) :A)	AL	T	F	F	F	
+SubClassOf(:A ObjectAllValuesFrom(:p :B))	AL	T	F	F	T	
+EquivalentClasses(:A ObjectAllValuesFrom(:p :B))	AL	T	F	F	F	
+DisjointClasses(:A ObjectAllValuesFrom(:p :B))	ALC	T	F	F	F	
+ObjectPropertyDomain(:p ObjectAllValuesFrom(:p :B))	AL	T	F	F	T	
+ObjectPropertyRange(:p ObjectAllValuesFrom(:p :B))	AL	T	F	F	T	
+ClassAssertion(ObjectAllValuesFrom(:p :B) :a)	AL	T	F	F	T	
+SubClassOf(ObjectIntersectionOf(:B :C) :A)	AL	T	T	F	T	
+SubClassOf(:A ObjectIntersectionOf(:B :C))	AL	T	T	T	T	
+EquivalentClasses(:A ObjectIntersectionOf(:B :C))	AL	T	T	F	T	
+DisjointClasses(:A ObjectIntersectionOf(:B :C))	ALC	T	T	F	T	
+ObjectPropertyDomain(:p ObjectIntersectionOf(:B :C))	AL	T	T	T	T	
+ObjectPropertyRange(:p ObjectIntersectionOf(:B :C))	AL	T	T	T	T	
+ClassAssertion(ObjectIntersectionOf(:B :C) :a)	AL	T	T	F	T	
+SubClassOf(ObjectUnionOf(:B :C) :A)	ALU	T	F	F	T	
+SubClassOf(:A ObjectUnionOf(:B :C))	ALU	T	F	F	F	
+EquivalentClasses(:A ObjectUnionOf(:B :C))	ALU	T	F	F	F	
+DisjointClasses(:A ObjectUnionOf(:B :C))	ALC	T	F	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p ObjectUnionOf(:B :C))	ALU	T	F	F	F	
+ObjectPropertyRange(:p ObjectUnionOf(:B :C))	ALU	T	F	F	F	
+ClassAssertion(ObjectUnionOf(:B :C) :a)	ALU	T	F	F	F	
+SubClassOf(ObjectComplementOf(:B) :A)	AL	T	F	F	F	OWL API: ALC; the complement of a named class is atomic negation (AL)
+SubClassOf(:A ObjectComplementOf(:B))	AL	T	F	T	T	OWL API: ALC; the complement of a named class is atomic negation (AL)
+EquivalentClasses(:A ObjectComplementOf(:B))	AL	T	F	F	F	OWL API: ALC; the complement of a named class is atomic negation (AL)
+DisjointClasses(:A ObjectComplementOf(:B))	ALC	T	F	F	F	
+ObjectPropertyDomain(:p ObjectComplementOf(:B))	AL	T	F	T	T	OWL API: ALC; the complement of a named class is atomic negation (AL)
+ObjectPropertyRange(:p ObjectComplementOf(:B))	AL	T	F	T	T	OWL API: ALC; the complement of a named class is atomic negation (AL)
+ClassAssertion(ObjectComplementOf(:B) :a)	AL	T	F	F	T	OWL API: ALC; the complement of a named class is atomic negation (AL)
+SubClassOf(ObjectComplementOf(ObjectSomeValuesFrom(:p :B)) :A)	ALC	T	F	F	F	
+SubClassOf(:A ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	T	
+EquivalentClasses(:A ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	F	
+DisjointClasses(:A ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	F	
+ObjectPropertyDomain(:p ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	T	
+ObjectPropertyRange(:p ObjectComplementOf(ObjectSomeValuesFrom(:p :B)))	ALC	T	F	F	T	
+ClassAssertion(ObjectComplementOf(ObjectSomeValuesFrom(:p :B)) :a)	ALC	T	F	F	T	
+SubClassOf(ObjectOneOf(:a) :A)	ALUO	T	T	F	T	
+SubClassOf(:A ObjectOneOf(:a))	ALUO	T	T	F	F	
+EquivalentClasses(:A ObjectOneOf(:a))	ALUO	T	T	F	F	
+DisjointClasses(:A ObjectOneOf(:a))	ALCO	T	T	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p ObjectOneOf(:a))	ALUO	T	T	F	F	
+ObjectPropertyRange(:p ObjectOneOf(:a))	ALUO	T	T	F	F	
+ClassAssertion(ObjectOneOf(:a) :a)	ALUO	T	T	F	F	
+SubClassOf(ObjectOneOf(:a :b) :A)	ALUO	T	F	F	T	
+SubClassOf(:A ObjectOneOf(:a :b))	ALUO	T	F	F	F	
+EquivalentClasses(:A ObjectOneOf(:a :b))	ALUO	T	F	F	F	
+DisjointClasses(:A ObjectOneOf(:a :b))	ALCO	T	F	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p ObjectOneOf(:a :b))	ALUO	T	F	F	F	
+ObjectPropertyRange(:p ObjectOneOf(:a :b))	ALUO	T	F	F	F	
+ClassAssertion(ObjectOneOf(:a :b) :a)	ALUO	T	F	F	F	
+SubClassOf(ObjectHasValue(:p :a) :A)	ALEO	T	T	F	T	
+SubClassOf(:A ObjectHasValue(:p :a))	ALEO	T	T	F	T	
+EquivalentClasses(:A ObjectHasValue(:p :a))	ALEO	T	T	F	T	
+DisjointClasses(:A ObjectHasValue(:p :a))	ALCO	T	T	F	T	
+ObjectPropertyDomain(:p ObjectHasValue(:p :a))	ALEO	T	T	F	T	
+ObjectPropertyRange(:p ObjectHasValue(:p :a))	ALEO	T	T	F	T	
+ClassAssertion(ObjectHasValue(:p :a) :a)	ALEO	T	T	F	T	
+SubClassOf(ObjectHasSelf(:p) :A)	ALR	T	T	F	F	
+SubClassOf(:A ObjectHasSelf(:p))	ALR	T	T	F	F	
+EquivalentClasses(:A ObjectHasSelf(:p))	ALR	T	T	F	F	
+DisjointClasses(:A ObjectHasSelf(:p))	ALCR	T	T	F	F	
+ObjectPropertyDomain(:p ObjectHasSelf(:p))	ALR	T	T	F	F	
+ObjectPropertyRange(:p ObjectHasSelf(:p))	ALR	T	T	F	F	
+ClassAssertion(ObjectHasSelf(:p) :a)	ALR	T	T	F	F	
+SubClassOf(ObjectMinCardinality(1 :p :B) :A)	ALQ	T	F	F	F	
+SubClassOf(:A ObjectMinCardinality(1 :p :B))	ALQ	T	F	F	F	
+EquivalentClasses(:A ObjectMinCardinality(1 :p :B))	ALQ	T	F	F	F	
+DisjointClasses(:A ObjectMinCardinality(1 :p :B))	ALCQ	T	F	F	F	
+ObjectPropertyDomain(:p ObjectMinCardinality(1 :p :B))	ALQ	T	F	F	F	
+ObjectPropertyRange(:p ObjectMinCardinality(1 :p :B))	ALQ	T	F	F	F	
+ClassAssertion(ObjectMinCardinality(1 :p :B) :a)	ALQ	T	F	F	F	
+SubClassOf(ObjectMaxCardinality(0 :p :B) :A)	ALQ	T	F	F	F	
+SubClassOf(:A ObjectMaxCardinality(0 :p :B))	ALQ	T	F	F	T	
+EquivalentClasses(:A ObjectMaxCardinality(0 :p :B))	ALQ	T	F	F	F	
+DisjointClasses(:A ObjectMaxCardinality(0 :p :B))	ALCQ	T	F	F	F	
+ObjectPropertyDomain(:p ObjectMaxCardinality(0 :p :B))	ALQ	T	F	F	T	
+ObjectPropertyRange(:p ObjectMaxCardinality(0 :p :B))	ALQ	T	F	F	T	
+ClassAssertion(ObjectMaxCardinality(0 :p :B) :a)	ALQ	T	F	F	T	
+SubClassOf(ObjectMaxCardinality(1 :p :B) :A)	ALQ	T	F	F	F	
+SubClassOf(:A ObjectMaxCardinality(1 :p :B))	ALQ	T	F	F	T	
+EquivalentClasses(:A ObjectMaxCardinality(1 :p :B))	ALQ	T	F	F	F	
+DisjointClasses(:A ObjectMaxCardinality(1 :p :B))	ALCQ	T	F	F	F	
+ObjectPropertyDomain(:p ObjectMaxCardinality(1 :p :B))	ALQ	T	F	F	T	
+ObjectPropertyRange(:p ObjectMaxCardinality(1 :p :B))	ALQ	T	F	F	T	
+ClassAssertion(ObjectMaxCardinality(1 :p :B) :a)	ALQ	T	F	F	T	
+SubClassOf(ObjectMaxCardinality(1 :p) :A)	ALN	T	F	F	F	
+SubClassOf(:A ObjectMaxCardinality(1 :p))	ALN	T	F	F	T	
+EquivalentClasses(:A ObjectMaxCardinality(1 :p))	ALN	T	F	F	F	
+DisjointClasses(:A ObjectMaxCardinality(1 :p))	ALCN	T	F	F	F	
+ObjectPropertyDomain(:p ObjectMaxCardinality(1 :p))	ALN	T	F	F	T	
+ObjectPropertyRange(:p ObjectMaxCardinality(1 :p))	ALN	T	F	F	T	
+ClassAssertion(ObjectMaxCardinality(1 :p) :a)	ALN	T	F	F	T	
+SubClassOf(ObjectExactCardinality(1 :p :B) :A)	ALQ	T	F	F	F	
+SubClassOf(:A ObjectExactCardinality(1 :p :B))	ALQ	T	F	F	F	
+EquivalentClasses(:A ObjectExactCardinality(1 :p :B))	ALQ	T	F	F	F	
+DisjointClasses(:A ObjectExactCardinality(1 :p :B))	ALCQ	T	F	F	F	
+ObjectPropertyDomain(:p ObjectExactCardinality(1 :p :B))	ALQ	T	F	F	F	
+ObjectPropertyRange(:p ObjectExactCardinality(1 :p :B))	ALQ	T	F	F	F	
+ClassAssertion(ObjectExactCardinality(1 :p :B) :a)	ALQ	T	F	F	F	
+SubClassOf(DataSomeValuesFrom(:d xsd:integer) :A)	ALE(D)	T	T	T	T	
+SubClassOf(:A DataSomeValuesFrom(:d xsd:integer))	ALE(D)	T	T	T	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d xsd:integer))	ALE(D)	T	T	T	F	
+DisjointClasses(:A DataSomeValuesFrom(:d xsd:integer))	ALC(D)	T	T	T	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d xsd:integer))	ALE(D)	T	T	T	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d xsd:integer))	ALE(D)	T	T	T	F	
+ClassAssertion(DataSomeValuesFrom(:d xsd:integer) :a)	ALE(D)	T	T	F	F	
+SubClassOf(DataAllValuesFrom(:d xsd:integer) :A)	AL(D)	T	F	F	F	
+SubClassOf(:A DataAllValuesFrom(:d xsd:integer))	AL(D)	T	F	F	T	
+EquivalentClasses(:A DataAllValuesFrom(:d xsd:integer))	AL(D)	T	F	F	F	
+DisjointClasses(:A DataAllValuesFrom(:d xsd:integer))	ALC(D)	T	F	F	F	
+ObjectPropertyDomain(:p DataAllValuesFrom(:d xsd:integer))	AL(D)	T	F	F	T	
+ObjectPropertyRange(:p DataAllValuesFrom(:d xsd:integer))	AL(D)	T	F	F	T	
+ClassAssertion(DataAllValuesFrom(:d xsd:integer) :a)	AL(D)	T	F	F	T	
+SubClassOf(DataHasValue(:d "1"^^xsd:integer) :A)	AL(D)	T	T	F	T	
+SubClassOf(:A DataHasValue(:d "1"^^xsd:integer))	AL(D)	T	T	F	T	
+EquivalentClasses(:A DataHasValue(:d "1"^^xsd:integer))	AL(D)	T	T	F	T	
+DisjointClasses(:A DataHasValue(:d "1"^^xsd:integer))	ALC(D)	T	T	F	T	
+ObjectPropertyDomain(:p DataHasValue(:d "1"^^xsd:integer))	AL(D)	T	T	F	T	
+ObjectPropertyRange(:p DataHasValue(:d "1"^^xsd:integer))	AL(D)	T	T	F	T	
+ClassAssertion(DataHasValue(:d "1"^^xsd:integer) :a)	AL(D)	T	T	F	T	
+SubClassOf(DataMaxCardinality(1 :d) :A)	ALN(D)	T	F	F	F	
+SubClassOf(:A DataMaxCardinality(1 :d))	ALN(D)	T	F	F	T	
+EquivalentClasses(:A DataMaxCardinality(1 :d))	ALN(D)	T	F	F	F	
+DisjointClasses(:A DataMaxCardinality(1 :d))	ALCN(D)	T	F	F	F	
+ObjectPropertyDomain(:p DataMaxCardinality(1 :d))	ALN(D)	T	F	F	T	
+ObjectPropertyRange(:p DataMaxCardinality(1 :d))	ALN(D)	T	F	F	T	
+ClassAssertion(DataMaxCardinality(1 :d) :a)	ALN(D)	T	F	F	T	
+SubClassOf(ObjectSomeValuesFrom(ObjectInverseOf(:p) :B) :A)	ALEI	T	F	F	T	
+SubClassOf(:A ObjectSomeValuesFrom(ObjectInverseOf(:p) :B))	ALEI	T	F	T	F	
+EquivalentClasses(:A ObjectSomeValuesFrom(ObjectInverseOf(:p) :B))	ALEI	T	F	F	F	
+DisjointClasses(:A ObjectSomeValuesFrom(ObjectInverseOf(:p) :B))	ALCI	T	F	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p ObjectSomeValuesFrom(ObjectInverseOf(:p) :B))	ALEI	T	F	T	F	
+ObjectPropertyRange(:p ObjectSomeValuesFrom(ObjectInverseOf(:p) :B))	ALEI	T	F	T	F	
+ClassAssertion(ObjectSomeValuesFrom(ObjectInverseOf(:p) :B) :a)	ALEI	T	F	F	F	
+SubClassOf(DataSomeValuesFrom(:d xsd:double) :A)	ALE(D)	T	F	F	T	
+SubClassOf(:A DataSomeValuesFrom(:d xsd:double))	ALE(D)	T	F	F	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d xsd:double))	ALE(D)	T	F	F	F	
+DisjointClasses(:A DataSomeValuesFrom(:d xsd:double))	ALC(D)	T	F	F	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d xsd:double))	ALE(D)	T	F	F	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d xsd:double))	ALE(D)	T	F	F	F	
+ClassAssertion(DataSomeValuesFrom(:d xsd:double) :a)	ALE(D)	T	F	F	F	
+SubClassOf(DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)) :A)	ALE(D)	T	F	F	F	
+SubClassOf(:A DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)))	ALE(D)	T	F	F	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)))	ALE(D)	T	F	F	F	
+DisjointClasses(:A DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)))	ALC(D)	T	F	F	F	
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)))	ALE(D)	T	F	F	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)))	ALE(D)	T	F	F	F	
+ClassAssertion(DataSomeValuesFrom(:d DatatypeRestriction(xsd:integer xsd:minInclusive "1"^^xsd:integer)) :a)	ALE(D)	T	F	F	F	
+SubClassOf(DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)) :A)	ALE(D)	T	T	F	F	
+SubClassOf(:A DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)))	ALE(D)	T	T	F	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)))	ALE(D)	T	T	F	F	
+DisjointClasses(:A DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)))	ALC(D)	T	T	F	F	
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)))	ALE(D)	T	T	F	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)))	ALE(D)	T	T	F	F	
+ClassAssertion(DataSomeValuesFrom(:d DataOneOf("1"^^xsd:integer)) :a)	ALE(D)	T	T	F	F	
+SubClassOf(DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)) :A)	ALE(D)	T	T	T	T	
+SubClassOf(:A DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)))	ALE(D)	T	T	T	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)))	ALE(D)	T	T	T	F	
+DisjointClasses(:A DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)))	ALC(D)	T	T	T	T	OWL API: not RL; RL's DisjointClasses takes subClassExpressions (Profiles 4.2.5)
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)))	ALE(D)	T	T	T	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)))	ALE(D)	T	T	T	F	
+ClassAssertion(DataSomeValuesFrom(:d DataIntersectionOf(xsd:integer xsd:decimal)) :a)	ALE(D)	T	T	F	F	
+SubClassOf(DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)) :A)	ALE(D)	T	F	F	F	
+SubClassOf(:A DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)))	ALE(D)	T	F	F	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)))	ALE(D)	T	F	F	F	
+DisjointClasses(:A DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)))	ALC(D)	T	F	F	F	
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)))	ALE(D)	T	F	F	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)))	ALE(D)	T	F	F	F	
+ClassAssertion(DataSomeValuesFrom(:d DataUnionOf(xsd:integer xsd:string)) :a)	ALE(D)	T	F	F	F	
+SubClassOf(DataSomeValuesFrom(:d DataComplementOf(xsd:integer)) :A)	ALE(D)	T	F	F	F	
+SubClassOf(:A DataSomeValuesFrom(:d DataComplementOf(xsd:integer)))	ALE(D)	T	F	F	F	
+EquivalentClasses(:A DataSomeValuesFrom(:d DataComplementOf(xsd:integer)))	ALE(D)	T	F	F	F	
+DisjointClasses(:A DataSomeValuesFrom(:d DataComplementOf(xsd:integer)))	ALC(D)	T	F	F	F	
+ObjectPropertyDomain(:p DataSomeValuesFrom(:d DataComplementOf(xsd:integer)))	ALE(D)	T	F	F	F	
+ObjectPropertyRange(:p DataSomeValuesFrom(:d DataComplementOf(xsd:integer)))	ALE(D)	T	F	F	F	
+ClassAssertion(DataSomeValuesFrom(:d DataComplementOf(xsd:integer)) :a)	ALE(D)	T	F	F	F	
+SubObjectPropertyOf(:p :q)	ALH	T	T	T	T	
+SubObjectPropertyOf(ObjectPropertyChain(:p :q) :r)	ALR	T	T	F	T	
+SubObjectPropertyOf(ObjectPropertyChain(:p :q) :r) ObjectPropertyRange(:r :A)	ALR	T	F	F	T	
+SubObjectPropertyOf(ObjectPropertyChain(:p :q) :r) ObjectPropertyRange(:r :A) ObjectPropertyRange(:q :A)	ALR	T	T	F	T	
+EquivalentObjectProperties(:p :q)	ALH	T	T	T	T	
+DisjointObjectProperties(:p :q)	ALR	T	F	T	T	
+InverseObjectProperties(:p :q)	ALI	T	F	T	T	
+FunctionalObjectProperty(:p)	ALF	T	F	F	T	
+InverseFunctionalObjectProperty(:p)	ALIF	T	F	F	T	
+ReflexiveObjectProperty(:p)	ALR	T	T	T	F	
+IrreflexiveObjectProperty(:p)	ALR	T	F	T	T	
+SymmetricObjectProperty(:p)	ALI	T	F	T	T	
+AsymmetricObjectProperty(:p)	ALR	T	F	T	T	
+TransitiveObjectProperty(:p)	AL+	T	T	F	T	
+SubDataPropertyOf(:d :e)	ALH(D)	T	T	T	T	
+EquivalentDataProperties(:d :e)	ALH(D)	T	T	T	T	
+DisjointDataProperties(:d :e)	AL(D)	T	F	T	T	
+DataPropertyDomain(:d :A)	AL(D)	T	T	T	T	
+DataPropertyRange(:d xsd:integer)	AL(D)	T	T	T	T	
+DataPropertyRange(:d xsd:double)	AL(D)	T	F	F	T	
+DataPropertyRange(:d xsd:boolean)	AL(D)	T	F	F	T	
+DataPropertyRange(:d rdfs:Literal)	AL(D)	T	T	T	T	
+DataPropertyRange(:d rdf:PlainLiteral)	AL(D)	T	T	T	T	
+DataPropertyRange(:d owl:real)	AL(D)	T	T	T	F	
+Declaration(Datatype(:t)) DataPropertyRange(:d :t)	AL(D)	T	T	T	T	OWL API: not EL, QL, RL; the profiles' grammars allow datatypes the ontology declares or defines
+FunctionalDataProperty(:d)	ALF(D)	T	T	F	T	
+Declaration(Datatype(:t)) DatatypeDefinition(:t xsd:integer)	AL(D)	T	T	T	T	OWL API: AL; DatatypeDefinition uses data; OWL API: not EL, QL, RL; the profiles' grammars allow datatypes the ontology declares or defines
+HasKey(:A (:p) (:d))	AL(D)	T	T	F	T	OWL API: AL; HasKey with a data property uses data
+SameIndividual(:a :b)	ALO	T	T	F	T	
+DifferentIndividuals(:a :b)	ALCO	T	T	T	T	
+ObjectPropertyAssertion(:p :a :b)	AL	T	T	T	T	
+NegativeObjectPropertyAssertion(:p :a :b)	AL	T	T	F	T	
+DataPropertyAssertion(:d :a "1"^^xsd:integer)	AL(D)	T	T	T	T	
+NegativeDataPropertyAssertion(:d :a "1"^^xsd:integer)	AL(D)	T	T	F	T	
+ObjectPropertyAssertion(:p :a _:x)	AL	T	F	F	T	
+DisjointUnion(:A :B :C)	ALC	T	F	F	F	
+SubClassOf(:A :Undeclared)	AL	F	F	F	F	
+TransitiveObjectProperty(:p) FunctionalObjectProperty(:p)	ALF+	F	F	F	F	
+TransitiveObjectProperty(:p) SubClassOf(:A ObjectMaxCardinality(1 :p))	ALN+	F	F	F	F	
+SubObjectPropertyOf(ObjectPropertyChain(:p :q) :r) SubObjectPropertyOf(ObjectPropertyChain(:r :q) :p)	ALR	F	F	F	F	
+Declaration(Datatype(:A))	AL	F	F	F	F	
+Declaration(DataProperty(:p))	AL	F	F	F	F	
+Declaration(NamedIndividual(:A))	AL	T	T	T	T	
+DLSafeRule(Body(ClassAtom(:A Variable(:x))) Head(ClassAtom(:B Variable(:x))))	AL	T	F	F	F	
+SubObjectPropertyOf(:p owl:topObjectProperty)	ALH	T	T	T	T	
+SubObjectPropertyOf(ObjectInverseOf(:p) :q)	ALHI	T	F	T	T	
