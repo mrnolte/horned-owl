@@ -45,6 +45,11 @@ ClassAssertion(:A :a)
 ObjectPropertyAssertion(:p :a :a)
 NegativeObjectPropertyAssertion(:q :a :a)
 DatatypeDefinition(xsd:short xsd:integer)
+ObjectPropertyRange(:r :A)
+ObjectPropertyRange(:q :A)
+ObjectPropertyAssertion(:q :a _:x)
+ObjectPropertyRange(:s :C)
+SubObjectPropertyOf(ObjectPropertyChain(:p :r) :s)
 ";
 
 fn pool() -> Vec<AnnotatedComponent<RcStr>> {
@@ -183,6 +188,8 @@ fn whole_ontology_and_inserted_components_agree() {
         "UseOfNonSubClassExpression",
         "UseOfObjectPropertyInverse",
         "UseOfIllegalAxiomKind",
+        "UseOfAnonymousIndividual",
+        "UseOfPropertyChainWithoutRangeOnLastProperty",
     ] {
         assert!(kinds.contains(kind), "{kind} not reached: {kinds:?}");
     }

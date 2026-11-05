@@ -17,9 +17,11 @@
 //! conservatively here as always-illegal, which can only ever over-report,
 //! never under-report, a real violation.
 
+use std::collections::{HashMap, HashSet};
+
 use horned_owl::model::{
-    AnnotatedComponent, ClassExpression, Component, DataRange, ForIRI, ObjectPropertyExpression,
-    Ontology,
+    AnnotatedComponent, ClassExpression, Component, DataRange, ForIRI, Individual,
+    ObjectPropertyExpression, Ontology, SubObjectPropertyExpression,
 };
 use horned_owl::visitor::immutable::{Visit, Walk};
 
@@ -34,13 +36,99 @@ pub fn check<A: ForIRI, O: Ontology<A>>(o: &O) -> ProfileReport<A> {
     for ac in o.iter() {
         check_axiom(ac, &mut violations);
     }
+    violations.extend(chain_range_violations(o.iter()));
     ProfileReport::new(Profile::EL, violations)
+}
+
+/// Returns `true` for the axioms [`chain_range_violations`] reads.
+pub(crate) fn is_chain_range_input<A: ForIRI>(c: &Component<A>) -> bool {
+    matches!(
+        c,
+        Component::SubObjectPropertyOf(_)
+            | Component::EquivalentObjectProperties(_)
+            | Component::ObjectPropertyRange(_)
+    )
+}
+
+/// Returns the violations of EL's global restriction on property chains
+/// and ranges: if `SubObjectPropertyOf(ObjectPropertyChain(OP1 ... OPn) OP)`
+/// and the axioms impose a range restriction to `CE` on `OP`, they must
+/// impose it on `OPn` too. A range restriction on a property is a range of
+/// the property or of one of its super-properties.
+///
+/// See [W3C OWL 2 Profiles §2.2.6, "Global Restrictions"](https://www.w3.org/TR/owl2-profiles/#Global_Restrictions).
+pub(crate) fn chain_range_violations<'a, A: ForIRI + 'a>(
+    components: impl Iterator<Item = &'a AnnotatedComponent<A>>,
+) -> Vec<Violation<A>> {
+    let mut supers: HashMap<&ObjectPropertyExpression<A>, Vec<&ObjectPropertyExpression<A>>> =
+        HashMap::new();
+    let mut ranges: HashMap<&ObjectPropertyExpression<A>, Vec<&ClassExpression<A>>> =
+        HashMap::new();
+    let mut chains = Vec::new();
+    for ac in components {
+        match &ac.component {
+            Component::SubObjectPropertyOf(x) => match &x.sub {
+                SubObjectPropertyExpression::ObjectPropertyExpression(sub) => {
+                    supers.entry(sub).or_default().push(&x.sup)
+                }
+                SubObjectPropertyExpression::ObjectPropertyChain(chain) => {
+                    if let Some(last) = chain.last() {
+                        chains.push((ac, last, &x.sup));
+                    }
+                }
+            },
+            Component::EquivalentObjectProperties(x) => {
+                for a in &x.0 {
+                    for b in &x.0 {
+                        if a != b {
+                            supers.entry(a).or_default().push(b);
+                        }
+                    }
+                }
+            }
+            Component::ObjectPropertyRange(x) => ranges.entry(&x.ope).or_default().push(&x.ce),
+            _ => {}
+        }
+    }
+
+    let imposed = |p: &ObjectPropertyExpression<A>| {
+        let mut seen: HashSet<&ObjectPropertyExpression<A>> = HashSet::new();
+        let mut todo = vec![p];
+        let mut out: HashSet<&ClassExpression<A>> = HashSet::new();
+        while let Some(p) = todo.pop() {
+            if seen.insert(p) {
+                out.extend(ranges.get(p).into_iter().flatten().copied());
+                todo.extend(supers.get(p).into_iter().flatten().copied());
+            }
+        }
+        out
+    };
+
+    let mut violations = Vec::new();
+    for (ac, last, sup) in chains {
+        let on_last = imposed(last);
+        let mut missing: Vec<&ClassExpression<A>> = imposed(sup)
+            .into_iter()
+            .filter(|ce| !on_last.contains(ce))
+            .collect();
+        missing.sort();
+        for ce in missing {
+            violations.push(Violation::UseOfPropertyChainWithoutRangeOnLastProperty {
+                axiom: ac.clone(),
+                ce: ce.clone(),
+            });
+        }
+    }
+    violations
 }
 
 /// Checks `ac` against the EL profile, pushing any violations onto `out`.
 pub(crate) fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
     if axiom_uses_inverse(ac) {
         out.push(Violation::UseOfObjectPropertyInverse { axiom: ac.clone() });
+    }
+    if uses_anonymous_individual(ac) {
+        out.push(Violation::UseOfAnonymousIndividual { axiom: ac.clone() });
     }
 
     match &ac.component {
@@ -233,6 +321,7 @@ fn is_el_sub_class_expression<A: ForIRI>(ce: &ClassExpression<A>) -> bool {
         ClassExpression::ObjectIntersectionOf(ces) => ces.iter().all(is_el_sub_class_expression),
         ClassExpression::ObjectSomeValuesFrom { bce, .. } => is_el_sub_class_expression(bce),
         ClassExpression::ObjectHasValue { .. } => true,
+        ClassExpression::ObjectHasSelf(_) => true,
         ClassExpression::ObjectOneOf(inds) => inds.len() == 1,
         ClassExpression::DataSomeValuesFrom { dr, .. } => is_el_data_range(dr),
         ClassExpression::DataHasValue { .. } => true,
@@ -270,8 +359,31 @@ fn is_el_super_class_expression<A: ForIRI>(ce: &ClassExpression<A>) -> bool {
 fn is_el_data_range<A: ForIRI>(dr: &DataRange<A>) -> bool {
     match dr {
         DataRange::Datatype(dt) => crate::datatypes::is_el_or_ql_datatype(dt.0.as_ref()),
+        DataRange::DataIntersectionOf(drs) => drs.iter().all(is_el_data_range),
+        DataRange::DataOneOf(literals) => literals.len() == 1,
         _ => false,
     }
+}
+
+/// `Visit` state for `uses_anonymous_individual`: `true` once an anonymous
+/// individual has been seen where the grammar has `Individual`.
+struct AnonymousIndividualDetector<A: ForIRI>(bool, std::marker::PhantomData<A>);
+
+impl<A: ForIRI> Visit<A> for AnonymousIndividualDetector<A> {
+    fn visit_individual(&mut self, i: &Individual<A>) {
+        if matches!(i, Individual::Anonymous(_)) {
+            self.0 = true;
+        }
+    }
+}
+
+/// Returns `true` if `ac` uses an anonymous individual as an `Individual`;
+/// EL and QL have `Individual := NamedIndividual`. Anonymous individuals as
+/// annotation subjects or values are not individuals in this sense.
+pub(crate) fn uses_anonymous_individual<A: ForIRI>(ac: &AnnotatedComponent<A>) -> bool {
+    let mut walk = Walk::new(AnonymousIndividualDetector(false, std::marker::PhantomData));
+    walk.annotated_component(ac);
+    walk.into_visit().0
 }
 
 /// `Visit` state for `axiom_uses_inverse`: `true` once any
@@ -373,10 +485,10 @@ mod test {
         assert!(!report.is_conformant());
     }
 
-    // ObjectHasSelf is a legal EL *super*class-position construct but not
-    // a legal *sub*class-position one.
+    // EL has one class expression grammar for both positions, and
+    // ObjectHasSelf is in it (W3C OWL 2 Profiles §2.2.3).
     #[test]
-    fn has_self_is_super_only() {
+    fn has_self_is_legal_in_both_positions() {
         let (b, mut o) = declared_ontology();
         let has_self = ClassExpression::ObjectHasSelf(ObjectPropertyExpression::ObjectProperty(
             b.object_property("http://example.com/p"),
@@ -393,7 +505,7 @@ mod test {
             sup: b.class("http://example.com/A").into(),
             sub: has_self,
         });
-        assert!(!check(&o2).is_conformant());
+        assert!(check(&o2).is_conformant());
     }
 
     // Inverse object properties are banned outright in EL, wherever they
