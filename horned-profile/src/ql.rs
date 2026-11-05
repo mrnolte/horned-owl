@@ -42,7 +42,7 @@ pub fn check<A: ForIRI, O: Ontology<A>>(o: &O) -> ProfileReport<A> {
 }
 
 /// Checks `ac` against the QL profile, pushing any violations onto `out`.
-fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
+pub(crate) fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
     match &ac.component {
         Component::SubClassOf(x) => {
             check_sub(&x.sub, ac, out);

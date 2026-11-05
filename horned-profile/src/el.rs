@@ -38,7 +38,7 @@ pub fn check<A: ForIRI, O: Ontology<A>>(o: &O) -> ProfileReport<A> {
 }
 
 /// Checks `ac` against the EL profile, pushing any violations onto `out`.
-fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
+pub(crate) fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
     if axiom_uses_inverse(ac) {
         out.push(Violation::UseOfObjectPropertyInverse { axiom: ac.clone() });
     }

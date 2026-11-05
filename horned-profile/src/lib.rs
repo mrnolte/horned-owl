@@ -9,16 +9,20 @@
 //! [`el::check`], [`ql::check`], [`rl::check`]. [`check`] and
 //! [`conformant_profiles`] dispatch across all four by [`Profile`].
 
+mod analysis;
 mod datatypes;
 pub mod declared;
 pub mod el;
+pub mod expressivity;
 pub mod owl2dl;
 pub mod ql;
 pub mod regularity;
 pub mod rl;
 pub mod simple_property;
 
+pub use analysis::Analysis;
 pub use declared::DeclaredEntities;
+pub use expressivity::{Construct, Expressivity};
 pub use simple_property::SimplePropertyAnalysis;
 
 use horned_owl::model::{
