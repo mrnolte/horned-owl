@@ -21,7 +21,8 @@
 use std::collections::{HashMap, HashSet};
 
 use horned_owl::model::{
-    Component, ForIRI, ObjectPropertyExpression, Ontology, SubObjectPropertyExpression,
+    AnnotatedComponent, Component, ForIRI, ObjectPropertyExpression, Ontology,
+    SubObjectPropertyExpression,
 };
 
 /// Which object-property expressions in an ontology are composite
@@ -33,6 +34,18 @@ impl<A: ForIRI> SimplePropertyAnalysis<A> {
     /// composite properties and propagating compositeness up the
     /// sub-property hierarchy to a fixpoint.
     pub fn from_ontology<O: Ontology<A>>(o: &O) -> Self {
+        Self::from_components(o.iter())
+    }
+
+    /// Builds a `SimplePropertyAnalysis` from `components`; only
+    /// `TransitiveObjectProperty`, `SubObjectPropertyOf`,
+    /// `EquivalentObjectProperties` and `InverseObjectProperties` matter.
+    pub(crate) fn from_components<'a>(
+        components: impl Iterator<Item = &'a AnnotatedComponent<A>>,
+    ) -> Self
+    where
+        A: 'a,
+    {
         let mut composite: HashSet<ObjectPropertyExpression<A>> = HashSet::new();
         // sub-property -> declared super-properties, from plain
         // (non-chain) SubObjectPropertyOf and both directions of
@@ -40,7 +53,7 @@ impl<A: ForIRI> SimplePropertyAnalysis<A> {
         let mut edges: HashMap<ObjectPropertyExpression<A>, Vec<ObjectPropertyExpression<A>>> =
             HashMap::new();
 
-        for ac in o.iter() {
+        for ac in components {
             match &ac.component {
                 Component::TransitiveObjectProperty(top) => {
                     mark_composite(&mut composite, &top.0);
@@ -107,6 +120,11 @@ impl<A: ForIRI> SimplePropertyAnalysis<A> {
         }
 
         SimplePropertyAnalysis(composite)
+    }
+
+    /// The composite property expressions.
+    pub(crate) fn composites(&self) -> &HashSet<ObjectPropertyExpression<A>> {
+        &self.0
     }
 
     /// Returns `true` if `ope` is simple (not composite).

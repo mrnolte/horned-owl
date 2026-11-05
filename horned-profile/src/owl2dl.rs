@@ -13,9 +13,10 @@
 use std::collections::BTreeSet;
 
 use horned_owl::model::{
-    AnnotatedComponent, AnnotationProperty, Class, ClassExpression, Component, DataProperty,
-    DataRange, Datatype, ForIRI, IRI, NamedEntityKind, ObjectProperty, ObjectPropertyExpression,
-    Ontology,
+    AnnotatedComponent, AnnotationProperty, AsymmetricObjectProperty, Class, ClassExpression,
+    Component, DataProperty, DataRange, Datatype, ForIRI, FunctionalObjectProperty, IRI,
+    InverseFunctionalObjectProperty, IrreflexiveObjectProperty, NamedEntityKind, ObjectProperty,
+    ObjectPropertyExpression, Ontology,
 };
 use horned_owl::visitor::immutable::{Visit, Walk};
 
@@ -101,6 +102,39 @@ impl<A: ForIRI> Visit<A> for EntityUsage<A> {
 /// Named individuals aren't collected -- OWL 2 DL doesn't require them to
 /// be declared, unlike the other five entity kinds (see the absence of a
 /// `UseOfUndeclaredNamedIndividual` violation).
+/// Returns every named entity `ac` uses (except individuals), with its kind.
+pub(crate) fn entity_usage_of<A: ForIRI>(
+    ac: &AnnotatedComponent<A>,
+) -> Vec<(IRI<A>, NamedEntityKind)> {
+    let mut walk = Walk::new(EntityUsage::new());
+    walk.annotated_component(ac);
+    let usage = walk.into_visit();
+    let tag = |set: BTreeSet<IRI<A>>, kind| set.into_iter().map(move |iri| (iri, kind));
+    tag(usage.classes, NamedEntityKind::Class)
+        .chain(tag(
+            usage.object_properties,
+            NamedEntityKind::ObjectProperty,
+        ))
+        .chain(tag(usage.data_properties, NamedEntityKind::DataProperty))
+        .chain(tag(
+            usage.annotation_properties,
+            NamedEntityKind::AnnotationProperty,
+        ))
+        .chain(tag(usage.datatypes, NamedEntityKind::Datatype))
+        .collect()
+}
+
+/// Returns the violation for an IRI used as `kind` without a declaration.
+pub(crate) fn undeclared_violation<A: ForIRI>(iri: IRI<A>, kind: NamedEntityKind) -> Violation<A> {
+    match kind {
+        NamedEntityKind::Class => Violation::UseOfUndeclaredClass { iri },
+        NamedEntityKind::ObjectProperty => Violation::UseOfUndeclaredObjectProperty { iri },
+        NamedEntityKind::DataProperty => Violation::UseOfUndeclaredDataProperty { iri },
+        NamedEntityKind::AnnotationProperty => Violation::UseOfUndeclaredAnnotationProperty { iri },
+        _ => Violation::UseOfUndeclaredDatatype { iri },
+    }
+}
+
 fn collect_entity_usage<A: ForIRI, O: Ontology<A>>(o: &O) -> EntityUsage<A> {
     let mut walk = Walk::new(EntityUsage::new());
     for ac in o.iter() {
@@ -163,7 +197,7 @@ fn illegal_punning_violations<A: ForIRI>(declared: &DeclaredEntities<A>) -> Vec<
 
 /// Returns the display name `Violation::UseOfIllegalPunning` uses for
 /// `k`.
-fn kind_name(k: NamedEntityKind) -> &'static str {
+pub(crate) fn kind_name(k: NamedEntityKind) -> &'static str {
     match k {
         NamedEntityKind::Class => "Class",
         NamedEntityKind::Datatype => "Datatype",
@@ -196,63 +230,89 @@ fn reserved_vocabulary_violations<A: ForIRI>(declared: &DeclaredEntities<A>) -> 
 fn simple_property_violations<A: ForIRI, O: Ontology<A>>(o: &O) -> Vec<Violation<A>> {
     let analysis = SimplePropertyAnalysis::from_ontology(o);
     let mut violations = Vec::new();
-
     for ac in o.iter() {
-        let usage = simple_property_usage(ac);
-        for ope in &usage.has_self {
-            if analysis.is_composite(ope) {
-                violations.push(Violation::UseOfNonSimplePropertyInObjectHasSelf {
-                    axiom: ac.clone(),
-                    ope: ope.clone(),
-                });
-            }
-        }
-        for ope in &usage.cardinality {
-            if analysis.is_composite(ope) {
-                violations.push(Violation::UseOfNonSimplePropertyInCardinalityRestriction {
-                    axiom: ac.clone(),
-                    ope: ope.clone(),
-                });
-            }
-        }
+        simple_property_violations_of(ac, &analysis, &mut violations);
+    }
+    violations
+}
 
-        match &ac.component {
-            Component::DisjointObjectProperties(x) => {
-                if x.0.iter().any(|ope| analysis.is_composite(ope)) {
-                    violations.push(Violation::UseOfNonSimplePropertyInDisjointPropertiesAxiom {
-                        axiom: ac.clone(),
-                    });
-                }
-            }
-            Component::IrreflexiveObjectProperty(x) if analysis.is_composite(&x.0) => {
-                violations.push(
-                    Violation::UseOfNonSimplePropertyInIrreflexivePropertyAxiom {
-                        axiom: ac.clone(),
-                    },
-                );
-            }
-            Component::AsymmetricObjectProperty(x) if analysis.is_composite(&x.0) => {
-                violations.push(Violation::UseOfNonSimplePropertyInAsymmetricPropertyAxiom {
-                    axiom: ac.clone(),
-                });
-            }
-            Component::FunctionalObjectProperty(x) if analysis.is_composite(&x.0) => {
-                violations.push(Violation::UseOfNonSimplePropertyInFunctionalPropertyAxiom {
-                    axiom: ac.clone(),
-                });
-            }
-            Component::InverseFunctionalObjectProperty(x) if analysis.is_composite(&x.0) => {
-                violations.push(
-                    Violation::UseOfNonSimplePropertyInInverseFunctionalPropertyAxiom {
-                        axiom: ac.clone(),
-                    },
-                );
-            }
-            _ => {}
+/// Pushes the violations of `ac` that use a composite object property where
+/// a simple one is required, per `analysis`.
+pub(crate) fn simple_property_violations_of<A: ForIRI>(
+    ac: &AnnotatedComponent<A>,
+    analysis: &SimplePropertyAnalysis<A>,
+    violations: &mut Vec<Violation<A>>,
+) {
+    let usage = simple_property_usage(ac);
+    for ope in &usage.has_self {
+        if analysis.is_composite(ope) {
+            violations.push(Violation::UseOfNonSimplePropertyInObjectHasSelf {
+                axiom: ac.clone(),
+                ope: ope.clone(),
+            });
+        }
+    }
+    for ope in &usage.cardinality {
+        if analysis.is_composite(ope) {
+            violations.push(Violation::UseOfNonSimplePropertyInCardinalityRestriction {
+                axiom: ac.clone(),
+                ope: ope.clone(),
+            });
         }
     }
 
-    violations
+    match &ac.component {
+        Component::DisjointObjectProperties(x) => {
+            if x.0.iter().any(|ope| analysis.is_composite(ope)) {
+                violations.push(Violation::UseOfNonSimplePropertyInDisjointPropertiesAxiom {
+                    axiom: ac.clone(),
+                });
+            }
+        }
+        Component::IrreflexiveObjectProperty(x) if analysis.is_composite(&x.0) => {
+            violations.push(
+                Violation::UseOfNonSimplePropertyInIrreflexivePropertyAxiom { axiom: ac.clone() },
+            );
+        }
+        Component::AsymmetricObjectProperty(x) if analysis.is_composite(&x.0) => {
+            violations.push(Violation::UseOfNonSimplePropertyInAsymmetricPropertyAxiom {
+                axiom: ac.clone(),
+            });
+        }
+        Component::FunctionalObjectProperty(x) if analysis.is_composite(&x.0) => {
+            violations.push(Violation::UseOfNonSimplePropertyInFunctionalPropertyAxiom {
+                axiom: ac.clone(),
+            });
+        }
+        Component::InverseFunctionalObjectProperty(x) if analysis.is_composite(&x.0) => {
+            violations.push(
+                Violation::UseOfNonSimplePropertyInInverseFunctionalPropertyAxiom {
+                    axiom: ac.clone(),
+                },
+            );
+        }
+        _ => {}
+    }
+}
+
+/// Returns the object property expressions `ac` requires to be simple.
+pub(crate) fn simple_property_requirements<A: ForIRI>(
+    ac: &AnnotatedComponent<A>,
+) -> Vec<ObjectPropertyExpression<A>> {
+    let usage = simple_property_usage(ac);
+    let mut out = usage.has_self;
+    out.extend(usage.cardinality);
+    match &ac.component {
+        Component::DisjointObjectProperties(x) => out.extend(x.0.iter().cloned()),
+        Component::IrreflexiveObjectProperty(IrreflexiveObjectProperty(p))
+        | Component::AsymmetricObjectProperty(AsymmetricObjectProperty(p))
+        | Component::FunctionalObjectProperty(FunctionalObjectProperty(p))
+        | Component::InverseFunctionalObjectProperty(InverseFunctionalObjectProperty(p)) => {
+            out.push(p.clone())
+        }
+        _ => {}
+    }
+    out
 }
 
 struct SimplePropertyUsage<A: ForIRI> {
@@ -301,22 +361,40 @@ fn too_few_operands_violations<A: ForIRI, O: Ontology<A>>(o: &O) -> Vec<Violatio
     let mut violations = Vec::new();
 
     for ac in o.iter() {
-        let usage = too_few_operands_usage(ac);
-        for ce in usage.class_expressions {
-            violations.push(Violation::UseOfClassExpressionWithTooFewOperands {
-                axiom: ac.clone(),
-                ce,
-            });
-        }
-        for dr in usage.data_ranges {
-            violations.push(Violation::UseOfDataRangeWithTooFewOperands {
-                axiom: ac.clone(),
-                dr,
-            });
-        }
+        too_few_operands_violations_of(ac, &mut violations);
     }
-
     violations
+}
+
+/// Pushes the violations of the OWL 2 DL rules that look at `ac` alone:
+/// too few operands, and redefining a built-in datatype.
+pub(crate) fn local_violations<A: ForIRI>(
+    ac: &AnnotatedComponent<A>,
+    violations: &mut Vec<Violation<A>>,
+) {
+    too_few_operands_violations_of(ac, violations);
+    if is_builtin_datatype_definition(ac) {
+        violations.push(Violation::UseOfBuiltinDatatypeInDatatypeDefinition { axiom: ac.clone() });
+    }
+}
+
+fn too_few_operands_violations_of<A: ForIRI>(
+    ac: &AnnotatedComponent<A>,
+    violations: &mut Vec<Violation<A>>,
+) {
+    let usage = too_few_operands_usage(ac);
+    for ce in usage.class_expressions {
+        violations.push(Violation::UseOfClassExpressionWithTooFewOperands {
+            axiom: ac.clone(),
+            ce,
+        });
+    }
+    for dr in usage.data_ranges {
+        violations.push(Violation::UseOfDataRangeWithTooFewOperands {
+            axiom: ac.clone(),
+            dr,
+        });
+    }
 }
 
 struct TooFewOperandsUsage<A: ForIRI> {
@@ -371,15 +449,14 @@ fn too_few_operands_usage<A: ForIRI>(ac: &AnnotatedComponent<A>) -> TooFewOperan
 /// [OWL 2 Structural Specification §9.4, "Datatype Definitions"](https://www.w3.org/TR/owl2-syntax/#Datatype_Definitions).
 fn builtin_datatype_definition_violations<A: ForIRI, O: Ontology<A>>(o: &O) -> Vec<Violation<A>> {
     o.iter()
-        .filter_map(|ac| match &ac.component {
-            Component::DatatypeDefinition(x)
-                if horned_owl::vocab::is_known_xsd_datatype(x.kind.0.as_ref()) =>
-            {
-                Some(Violation::UseOfBuiltinDatatypeInDatatypeDefinition { axiom: ac.clone() })
-            }
-            _ => None,
-        })
+        .filter(|ac| is_builtin_datatype_definition(ac))
+        .map(|ac| Violation::UseOfBuiltinDatatypeInDatatypeDefinition { axiom: ac.clone() })
         .collect()
+}
+
+fn is_builtin_datatype_definition<A: ForIRI>(ac: &AnnotatedComponent<A>) -> bool {
+    matches!(&ac.component, Component::DatatypeDefinition(x)
+        if horned_owl::vocab::is_known_xsd_datatype(x.kind.0.as_ref()))
 }
 
 /// Returns `UseOfPropertyInChainCausingCycle` violations for every cycle
