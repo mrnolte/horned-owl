@@ -5,6 +5,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.io.FileDocumentSource;
@@ -26,7 +28,7 @@ import org.semanticweb.owlapi.util.DLExpressivityChecker;
  * Prints the DL name and whether the ontology is in OWL 2 DL, EL, QL and RL,
  * tab-separated, one line per input. Imports are not loaded.
  *
- * <p>Inputs are files, or with {@code --cases cases.tsv} the axioms in the
+ * <p>Inputs are files, {@code --closure root.ttl iri=file ...} for an import closure, or with {@code --cases cases.tsv} the axioms in the
  * first column of each case, wrapped in {@link #prefix} and {@link #DECLARATIONS}
  * (the same wrapper as horned-profile's {@code tests/reference.rs}).
  */
@@ -57,22 +59,41 @@ public class Reference {
             }
             return;
         }
+        if (args.length >= 2 && args[0].equals("--closure")) {
+            Map<String, File> imports = new HashMap<>();
+            for (int i = 2; i < args.length; i++) {
+                String[] mapping = args[i].split("=", 2);
+                imports.put(mapping[0], new File(mapping[1]));
+            }
+            System.out.println(args[1] + "\t" + check(new FileDocumentSource(new File(args[1])), imports));
+            return;
+        }
         for (String path : args) {
             System.out.println(path + "\t" + check(new FileDocumentSource(new File(path))));
         }
     }
 
     static String check(OWLOntologyDocumentSource source) {
+        return check(source, null);
+    }
+
+    /**
+     * Without {@code imports}, the ontology alone; with them, its import closure, each import read from the file
+     * mapped to its IRI (unmapped imports are missing).
+     */
+    static String check(OWLOntologyDocumentSource source, Map<String, File> imports) {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         File missing = new File("does-not-exist.owl");
+        Map<String, File> mapped = imports == null ? new HashMap<>() : imports;
         manager.getIRIMappers().clear();
-        manager.getIRIMappers().add(iri -> IRI.create(missing));
+        manager.getIRIMappers().add(iri -> IRI.create(mapped.getOrDefault(iri.toString(), missing)));
         OWLOntologyLoaderConfiguration config = new OWLOntologyLoaderConfiguration()
             .setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
         try {
             OWLOntology o = manager.loadOntologyFromOntologyDocument(source, config);
             StringBuilder line = new StringBuilder(
-                new DLExpressivityChecker(Collections.singleton(o)).getDescriptionLogicName());
+                new DLExpressivityChecker(imports == null ? Collections.singleton(o) : o.getImportsClosure())
+                    .getDescriptionLogicName());
             for (OWLProfile p : new OWLProfile[] {new OWL2DLProfile(), new OWL2ELProfile(),
                 new OWL2QLProfile(), new OWL2RLProfile()}) {
                 line.append('\t').append(p.checkOntology(o).isInProfile() ? 'T' : 'F');

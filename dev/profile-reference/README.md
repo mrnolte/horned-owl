@@ -31,8 +31,11 @@ Needs a JDK (11 or later) and Maven. 4.2.8 needs
 mvn -q compile exec:java -Dowlapi.version=4.2.8 "-Dexec.args=--cases cases.tsv"
 mvn -q compile exec:java "-Dexec.args=--cases cases.tsv"
 mvn -q compile exec:java "-Dexec.args=one.owl two.ttl"
+mvn -q compile exec:java "-Dexec.args=--closure root.ttl http://example.com/lib=lib.owl"
 ```
 
 Each prints one line per case or file: the input, the name, and `T`/`F` for
 OWL 2 DL, EL, QL and RL. Imports are not
-loaded; each case and file is checked alone.
+loaded; each case and file is checked alone. With `--closure`, the imports
+listed as `iri=file` are read from those files (others stay missing), and the
+name and profiles are of the import closure.
