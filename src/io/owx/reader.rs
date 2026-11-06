@@ -1129,9 +1129,14 @@ from_start! {
                                 (Annotation::from_xml(r, b"Annotation")?);
                         }
                         _ => {
+                            let component = axiom_from_start(r,e,axiom_kind.as_ref())?;
+                            if let Component::OntologyAnnotation(OntologyAnnotation(mut ann)) = component {
+                                ann.ann = annotation;
+                                return Ok(OntologyAnnotation(ann).into());
+                            }
                             return Ok(AnnotatedComponent{
                                 ann:annotation,
-                                component:axiom_from_start(r,e,axiom_kind.as_ref())?
+                                component
                             });
                         }
                     }
@@ -1697,6 +1702,33 @@ pub mod test {
         assert!(r.is_ok(), "Expected ontology, got failure:{:?}", r.err());
         let (o, m) = r.ok().unwrap();
         (o, m)
+    }
+
+    #[test]
+    fn ontology_annotation_with_annotation() {
+        let ont_s = r#"<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#" ontologyIRI="http://www.example.com/iri">
+    <Annotation>
+        <Annotation>
+            <AnnotationProperty IRI="http://www.w3.org/2000/01/rdf-schema#comment"/>
+            <Literal>Nested</Literal>
+        </Annotation>
+        <AnnotationProperty IRI="http://www.w3.org/2000/01/rdf-schema#label"/>
+        <Literal>Ontology</Literal>
+    </Annotation>
+</Ontology>
+"#;
+        let (ont, _) = read_ok(&mut ont_s.as_bytes());
+        let ac = ont
+            .i()
+            .component_for_kind(ComponentKind::OntologyAnnotation)
+            .next()
+            .unwrap();
+        assert!(ac.ann.is_empty());
+        let Component::OntologyAnnotation(OntologyAnnotation(ann)) = &ac.component else {
+            panic!("expected an ontology annotation, got {ac:?}");
+        };
+        assert_eq!(ann.ann.len(), 1);
     }
 
     #[test]
