@@ -70,6 +70,10 @@ pub struct Analysis<A: ForIRI, AA: ForIndex<A> = Rc<AnnotatedComponent<A>>> {
     used: HashMap<(IRI<A>, NamedEntityKind), usize>,
     /// Declarations of each IRI as each kind.
     declared: HashMap<IRI<A>, HashMap<NamedEntityKind, usize>>,
+    /// Declarations that only make entities declared: of each IRI as each
+    /// kind, and the components.
+    context: HashMap<IRI<A>, HashMap<NamedEntityKind, usize>>,
+    context_members: HashSet<AA>,
     undeclared: HashSet<(IRI<A>, NamedEntityKind)>,
     punned: HashSet<IRI<A>>,
     reserved: HashSet<IRI<A>>,
@@ -98,6 +102,8 @@ impl<A: ForIRI, AA: ForIndex<A>> Default for Analysis<A, AA> {
             local: [0; 4],
             used: HashMap::new(),
             declared: HashMap::new(),
+            context: HashMap::new(),
+            context_members: HashSet::new(),
             undeclared: HashSet::new(),
             punned: HashSet::new(),
             reserved: HashSet::new(),
@@ -136,6 +142,51 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
         }
         self.count(&component, true);
         self.members.insert(component);
+        true
+    }
+
+    /// Adds the declaration `component` as context: it makes its entity
+    /// declared, and counts for nothing else (the declarations of the imports
+    /// of an ontology analysed by itself); `false` if it is already there or
+    /// no declaration.
+    pub fn insert_context(&mut self, component: AA) -> bool {
+        let Some((iri, kind)) = declaration(&component.borrow().component) else {
+            return false;
+        };
+        if self.context_members.contains(component.borrow()) {
+            return false;
+        }
+        *self
+            .context
+            .entry(iri.clone())
+            .or_default()
+            .entry(kind)
+            .or_default() += 1;
+        self.context_members.insert(component);
+        self.update_declared(&iri, kind);
+        true
+    }
+
+    /// Removes the context declaration `component`; `false` if it is not
+    /// there.
+    pub fn remove_context(&mut self, component: &AnnotatedComponent<A>) -> bool {
+        let Some(member) = self.context_members.take(component) else {
+            return false;
+        };
+        if let Some((iri, kind)) = declaration(&member.borrow().component) {
+            if let Some(kinds) = self.context.get_mut(&iri) {
+                if let Some(n) = kinds.get_mut(&kind) {
+                    *n -= 1;
+                    if *n == 0 {
+                        kinds.remove(&kind);
+                    }
+                }
+                if kinds.is_empty() {
+                    self.context.remove(&iri);
+                }
+            }
+            self.update_declared(&iri, kind);
+        }
         true
     }
 
@@ -426,6 +477,10 @@ impl<A: ForIRI, AA: ForIndex<A>> Analysis<A, AA> {
             && !self
                 .declared
                 .get(iri)
+                .is_some_and(|kinds| kinds.contains_key(&kind))
+            && !self
+                .context
+                .get(iri)
                 .is_some_and(|kinds| kinds.contains_key(&kind));
         if missing {
             self.undeclared.insert(key);
@@ -595,5 +650,37 @@ mod test {
             .into(),
         );
         assert_eq!(analysis.global_violations(Profile::OWL2DL).len(), 1);
+    }
+
+    #[test]
+    fn context_declarations_only_declare() {
+        use crate::Profile;
+        use horned_owl::model::{ClassExpression, DeclareClass, DeclareDatatype, SubClassOf};
+        let b = Build::new_rc();
+        let mut analysis: Analysis<RcStr> = Analysis::new();
+        analysis.insert(
+            ac(SubClassOf {
+                sub: ClassExpression::Class(b.class("http://example.com/A")),
+                sup: ClassExpression::Class(b.class("http://example.com/B")),
+            })
+            .into(),
+        );
+        assert!(analysis.profiles().is_empty(), "A and B are undeclared");
+        for c in [
+            ac(DeclareClass(b.class("http://example.com/A"))),
+            ac(DeclareClass(b.class("http://example.com/B"))),
+            ac(DeclareDatatype(
+                b.datatype("http://www.w3.org/2001/XMLSchema#date"),
+            )),
+        ] {
+            assert!(analysis.insert_context(c.into()));
+        }
+        assert_eq!(
+            analysis.profiles(),
+            vec![Profile::OWL2DL, Profile::EL, Profile::QL, Profile::RL]
+        );
+        assert!(analysis.report(Profile::EL).violations().is_empty());
+        assert!(analysis.remove_context(&ac(DeclareClass(b.class("http://example.com/A")))));
+        assert!(analysis.profiles().is_empty(), "A is undeclared again");
     }
 }
