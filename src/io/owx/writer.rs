@@ -670,7 +670,7 @@ render! {
     }
 }
 
-contents! {OntologyAnnotation, self, (&self.0.ap, &self.0.av)}
+contents! {OntologyAnnotation, self, (&self.0.ann, &self.0.ap, &self.0.av)}
 
 contents! {Import, self, String::from(&self.0)}
 
@@ -1158,6 +1158,24 @@ mod test {
         assert!(
             s.contains("IRI=\"egc:DEF\""),
             "expected the longest-matching prefix egc:DEF, got: {s}"
+        );
+    }
+
+    #[test]
+    fn ontology_annotation_with_annotation() {
+        assert_round(
+            r#"<?xml version="1.0"?>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#" ontologyIRI="http://www.example.com/iri">
+    <Annotation>
+        <Annotation>
+            <AnnotationProperty IRI="http://www.w3.org/2000/01/rdf-schema#comment"/>
+            <Literal>Nested</Literal>
+        </Annotation>
+        <AnnotationProperty IRI="http://www.w3.org/2000/01/rdf-schema#label"/>
+        <Literal>Ontology</Literal>
+    </Annotation>
+</Ontology>
+"#,
         );
     }
 
