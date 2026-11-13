@@ -27,7 +27,7 @@
 use horned_owl::model::{
     AnnotatedComponent, ClassExpression, Component, DataRange, ForIRI, Ontology,
 };
-use horned_owl::vocab;
+use horned_owl::vocab::Namespace;
 
 use crate::declared::DeclaredEntities;
 use crate::owl2dl;
@@ -44,7 +44,7 @@ pub fn check<A: ForIRI, O: Ontology<A>>(o: &O) -> ProfileReport<A> {
 }
 
 /// Checks `ac` against the RL profile, pushing any violations onto `out`.
-fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
+pub(crate) fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>>) {
     match &ac.component {
         Component::SubClassOf(x) => {
             check_sub(&x.sub, ac, out);
@@ -115,11 +115,8 @@ fn check_axiom<A: ForIRI>(ac: &AnnotatedComponent<A>, out: &mut Vec<Violation<A>
                 "this datatype is not in RL's recognised data-range set",
             ));
         }
-        Component::DatatypeDefinition(_) => {
-            out.push(banned_axiom(
-                ac,
-                "DatatypeDefinition is not permitted in RL",
-            ));
+        Component::DatatypeDefinition(x) if !is_rl_data_range(&x.range) => {
+            out.push(banned_axiom(ac, "data range is not a legal RL data range"));
         }
         _ => {}
     }
@@ -232,46 +229,60 @@ fn is_rl_super_class_expression<A: ForIRI>(ce: &ClassExpression<A>) -> bool {
 fn is_rl_data_range<A: ForIRI>(dr: &DataRange<A>) -> bool {
     match dr {
         DataRange::Datatype(dt) => is_rl_datatype(dt.0.as_ref()),
+        DataRange::DataIntersectionOf(drs) => drs.iter().all(is_rl_data_range),
         _ => false,
     }
 }
 
-/// The XSD datatypes RL rejects.
+/// The built-in datatypes RL supports.
 ///
-/// Unlike EL/QL (where the accepted set turned out small and fixed, so
-/// those use an allowlist -- see [`crate::datatypes`]), RL's accepted set
-/// is broad and its rejected set stays small even after fairly wide
-/// empirical probing against ROBOT/the OWL API, so this is a denylist: RL
-/// accepts `boolean`/`float`/`double`/`int`/`short`/`negativeInteger`/
-/// `nonNegativeInteger`/`language`/`unsignedLong`/`unsignedByte` (all
-/// EL/QL-rejected), while rejecting `duration`/`unsignedInt`/
-/// `unsignedShort` in addition to the partial-date/time family below. The
-/// `unsignedInt`/`unsignedShort` rejected but `unsignedLong`/`unsignedByte`
-/// accepted asymmetry is real, empirically confirmed, not a transcription
-/// error -- XSD's derived numeric facets aren't implemented uniformly.
-const RL_EXCLUDED_DATATYPES: [&str; 10] = [
-    "http://www.w3.org/2001/XMLSchema#date",
-    "http://www.w3.org/2001/XMLSchema#time",
-    "http://www.w3.org/2001/XMLSchema#gYear",
-    "http://www.w3.org/2001/XMLSchema#gMonth",
-    "http://www.w3.org/2001/XMLSchema#gDay",
-    "http://www.w3.org/2001/XMLSchema#gYearMonth",
-    "http://www.w3.org/2001/XMLSchema#gMonthDay",
-    "http://www.w3.org/2001/XMLSchema#duration",
+/// See [W3C OWL 2 Profiles §4.2.1, "Entities"](https://www.w3.org/TR/owl2-profiles/#Entities_3).
+const RL_DATATYPES: [&str; 32] = [
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#PlainLiteral",
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#XMLLiteral",
+    "http://www.w3.org/2000/01/rdf-schema#Literal",
+    "http://www.w3.org/2001/XMLSchema#decimal",
+    "http://www.w3.org/2001/XMLSchema#integer",
+    "http://www.w3.org/2001/XMLSchema#nonNegativeInteger",
+    "http://www.w3.org/2001/XMLSchema#nonPositiveInteger",
+    "http://www.w3.org/2001/XMLSchema#positiveInteger",
+    "http://www.w3.org/2001/XMLSchema#negativeInteger",
+    "http://www.w3.org/2001/XMLSchema#long",
+    "http://www.w3.org/2001/XMLSchema#int",
+    "http://www.w3.org/2001/XMLSchema#short",
+    "http://www.w3.org/2001/XMLSchema#byte",
+    "http://www.w3.org/2001/XMLSchema#unsignedLong",
     "http://www.w3.org/2001/XMLSchema#unsignedInt",
     "http://www.w3.org/2001/XMLSchema#unsignedShort",
+    "http://www.w3.org/2001/XMLSchema#unsignedByte",
+    "http://www.w3.org/2001/XMLSchema#float",
+    "http://www.w3.org/2001/XMLSchema#double",
+    "http://www.w3.org/2001/XMLSchema#string",
+    "http://www.w3.org/2001/XMLSchema#normalizedString",
+    "http://www.w3.org/2001/XMLSchema#token",
+    "http://www.w3.org/2001/XMLSchema#language",
+    "http://www.w3.org/2001/XMLSchema#Name",
+    "http://www.w3.org/2001/XMLSchema#NCName",
+    "http://www.w3.org/2001/XMLSchema#NMTOKEN",
+    "http://www.w3.org/2001/XMLSchema#boolean",
+    "http://www.w3.org/2001/XMLSchema#hexBinary",
+    "http://www.w3.org/2001/XMLSchema#base64Binary",
+    "http://www.w3.org/2001/XMLSchema#anyURI",
+    "http://www.w3.org/2001/XMLSchema#dateTime",
+    "http://www.w3.org/2001/XMLSchema#dateTimeStamp",
 ];
 
-/// Returns `true` if `iri` is a legal RL datatype.
-///
-/// Any non-XSD datatype is legal; an XSD one is legal unless it's in
-/// [`RL_EXCLUDED_DATATYPES`].
+/// Returns `true` if `iri` is a legal RL datatype: one of
+/// [`RL_DATATYPES`], or a datatype outside the `rdf:`, `rdfs:`, `owl:` and
+/// `xsd:` namespaces (one the ontology defines).
 fn is_rl_datatype(iri: &str) -> bool {
-    if vocab::is_xsd_datatype(iri) {
-        !RL_EXCLUDED_DATATYPES.contains(&iri)
-    } else {
-        true
-    }
+    let reserved = [
+        Namespace::RDF.as_ref(),
+        Namespace::RDFS.as_ref(),
+        Namespace::OWL.as_ref(),
+        Namespace::XSD.as_ref(),
+    ];
+    RL_DATATYPES.contains(&iri) || !reserved.iter().any(|ns| iri.starts_with(ns))
 }
 
 #[cfg(test)]

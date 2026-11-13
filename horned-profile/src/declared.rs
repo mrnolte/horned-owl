@@ -108,19 +108,7 @@ impl<A: ForIRI> DeclaredEntities<A> {
         {
             return true;
         }
-        if kind == NamedEntityKind::Datatype
-            && (vocab::is_xsd_datatype(iri.as_ref())
-                || iri.as_ref() == OWL2Datatype::Literal.as_ref()
-                || is_owl_real_or_rational(iri)
-                || is_rdf_plain_or_xml_literal(iri))
-        {
-            return true;
-        }
-        if kind == NamedEntityKind::AnnotationProperty && vocab::is_annotation_builtin(iri.as_ref())
-        {
-            return true;
-        }
-        vocab::to_built_in_entity(iri).map(NamedEntityKind::from) == Some(kind)
+        is_builtin(iri, kind)
     }
 
     /// Returns declared IRIs that are OWL 2 DL "reserved vocabulary".
@@ -146,11 +134,7 @@ impl<A: ForIRI> DeclaredEntities<A> {
         let mut out: Vec<IRI<A>> = self
             .all_kinds
             .iter()
-            .filter(|(iri, kinds)| {
-                is_reserved_vocabulary(iri)
-                    && !is_legitimately_reusable_builtin(iri)
-                    && !is_xsd_iri_used_only_as_datatype(iri, kinds)
-            })
+            .filter(|(iri, kinds)| is_reserved_declaration(iri, kinds))
             .map(|(iri, _)| iri.clone())
             .collect();
         out.sort();
@@ -170,34 +154,12 @@ impl<A: ForIRI> DeclaredEntities<A> {
     /// its full declared-kind set (e.g. an IRI declared Class, Datatype,
     /// *and* NamedIndividual reports only `{Class, Datatype}` here).
     pub fn illegal_punnings(&self) -> Vec<(IRI<A>, BTreeSet<NamedEntityKind>)> {
-        const PROPERTY_KINDS: [NamedEntityKind; 3] = [
-            NamedEntityKind::ObjectProperty,
-            NamedEntityKind::DataProperty,
-            NamedEntityKind::AnnotationProperty,
-        ];
-
-        let mut out = Vec::new();
-        for (iri, kinds) in &self.all_kinds {
-            let mut violating: BTreeSet<NamedEntityKind> = BTreeSet::new();
-
-            if kinds.contains(&NamedEntityKind::Class) && kinds.contains(&NamedEntityKind::Datatype)
-            {
-                violating.insert(NamedEntityKind::Class);
-                violating.insert(NamedEntityKind::Datatype);
-            }
-
-            let present_properties: BTreeSet<NamedEntityKind> = PROPERTY_KINDS
-                .into_iter()
-                .filter(|k| kinds.contains(k))
-                .collect();
-            if present_properties.len() >= 2 {
-                violating.extend(present_properties);
-            }
-
-            if !violating.is_empty() {
-                out.push((iri.clone(), violating));
-            }
-        }
+        let mut out: Vec<_> = self
+            .all_kinds
+            .iter()
+            .map(|(iri, kinds)| (iri.clone(), illegal_pun_kinds(kinds)))
+            .filter(|(_, violating)| !violating.is_empty())
+            .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
@@ -207,6 +169,60 @@ impl<A: ForIRI> DeclaredEntities<A> {
     pub fn class_individual_puns(&self) -> &HashSet<IRI<A>> {
         self.index.puns()
     }
+}
+
+/// Returns `true` if `iri` needs no declaration as `kind`: built-in
+/// vocabulary (`owl:Thing`, `owl:topObjectProperty`, ...), the built-in
+/// annotation properties, and the XSD datatypes plus `rdfs:Literal`,
+/// `owl:real`, `owl:rational`, `rdf:PlainLiteral` and `rdf:XMLLiteral`.
+pub(crate) fn is_builtin<A: ForIRI>(iri: &IRI<A>, kind: NamedEntityKind) -> bool {
+    if kind == NamedEntityKind::Datatype
+        && (vocab::is_xsd_datatype(iri.as_ref())
+            || iri.as_ref() == OWL2Datatype::Literal.as_ref()
+            || is_owl_real_or_rational(iri)
+            || is_rdf_plain_or_xml_literal(iri))
+    {
+        return true;
+    }
+    if kind == NamedEntityKind::AnnotationProperty && vocab::is_annotation_builtin(iri.as_ref()) {
+        return true;
+    }
+    vocab::to_built_in_entity(iri).map(NamedEntityKind::from) == Some(kind)
+}
+
+/// Returns the kinds in `kinds` that OWL 2 DL forbids together: Class
+/// with Datatype, and any two of the three property kinds.
+pub(crate) fn illegal_pun_kinds(kinds: &BTreeSet<NamedEntityKind>) -> BTreeSet<NamedEntityKind> {
+    const PROPERTY_KINDS: [NamedEntityKind; 3] = [
+        NamedEntityKind::ObjectProperty,
+        NamedEntityKind::DataProperty,
+        NamedEntityKind::AnnotationProperty,
+    ];
+
+    let mut violating: BTreeSet<NamedEntityKind> = BTreeSet::new();
+    if kinds.contains(&NamedEntityKind::Class) && kinds.contains(&NamedEntityKind::Datatype) {
+        violating.insert(NamedEntityKind::Class);
+        violating.insert(NamedEntityKind::Datatype);
+    }
+    let present_properties: BTreeSet<NamedEntityKind> = PROPERTY_KINDS
+        .into_iter()
+        .filter(|k| kinds.contains(k))
+        .collect();
+    if present_properties.len() >= 2 {
+        violating.extend(present_properties);
+    }
+    violating
+}
+
+/// Returns `true` if declaring `iri` as `kinds` misuses reserved
+/// vocabulary (see `DeclaredEntities::reserved_vocabulary_violations`).
+pub(crate) fn is_reserved_declaration<A: ForIRI>(
+    iri: &IRI<A>,
+    kinds: &BTreeSet<NamedEntityKind>,
+) -> bool {
+    is_reserved_vocabulary(iri)
+        && !is_legitimately_reusable_builtin(iri)
+        && !is_xsd_iri_used_only_as_datatype(iri, kinds)
 }
 
 /// Returns `true` if `iri` is the built-in `owl:real` or `owl:rational`
