@@ -1444,7 +1444,7 @@ impl<'a, A: ForIRI, O: MutableOntology<A>> Reader<'a, A, O> {
         if is_ref {
             return self.annotate(iri, annotations);
         }
-        let mut ann = std::collections::BTreeSet::new();
+        let mut ann = horned_owl::model::AnnotationSet::new();
         for a in annotations {
             ann.extend(self.annotation(a)?);
         }
