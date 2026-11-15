@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Reference values for horned-profile from the OWL API.
+
+  OWL API 4.2.8 is the last release whose DLExpressivityChecker builds the
+  classic names (AL, SHOIN(D), SROIQ(D)) that Protégé shows; later releases
+  concatenate internal construct labels. Profiles come from 5.5.1.
+
+    mvn -q compile exec:java -Dowlapi.version=4.2.8 -Dexec.args="files..."
+    mvn -q compile exec:java -Dexec.args="files..."
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.hornedowl</groupId>
+  <artifactId>profile-reference</artifactId>
+  <version>1.0.0</version>
+  <properties>
+    <owlapi.version>5.5.1</owlapi.version>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <exec.mainClass>org.hornedowl.Reference</exec.mainClass>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>net.sourceforge.owlapi</groupId>
+      <artifactId>owlapi-distribution</artifactId>
+      <version>${owlapi.version}</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <directory>target/${owlapi.version}</directory>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.5.0</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
