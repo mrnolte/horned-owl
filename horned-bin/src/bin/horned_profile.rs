@@ -173,6 +173,10 @@ fn violation_kind<A: horned_owl::model::ForIRI>(v: &Violation<A>) -> &'static st
             "UseOfDataOneOfWithMultipleLiterals"
         }
         Violation::UseOfObjectPropertyInverse { .. } => "UseOfObjectPropertyInverse",
+        Violation::UseOfAnonymousIndividual { .. } => "UseOfAnonymousIndividual",
+        Violation::UseOfPropertyChainWithoutRangeOnLastProperty { .. } => {
+            "UseOfPropertyChainWithoutRangeOnLastProperty"
+        }
         Violation::UseOfIllegalAxiomKind { .. } => "UseOfIllegalAxiomKind",
     }
 }
