@@ -1541,9 +1541,8 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
     /// is declared as something that can have one: a class, or a
     /// datatype for a datatype definition.
     ///
-    /// An undeclared subject is an error, but in lax mode it takes its
-    /// kind from the axiom: a datatype if the other side is a declared
-    /// datatype, and otherwise a class.
+    /// An undeclared subject takes its kind from the axiom: a datatype if
+    /// the other side is a declared datatype, and otherwise a class.
     fn equivalent_class_kind(
         &self,
         a: &Term<A>,
@@ -1555,9 +1554,7 @@ impl<A: ForIRI, AA: ForIndex<A>, O: RDFOntology<A, AA>, B: AsRef<Build<A>>>
             .find(|k| self.term_is_kind(a, *k, ic));
 
         declared.or_else(|| {
-            if !self.config.lax {
-                None
-            } else if self.term_is_kind(b, NamedOWLEntityKind::Datatype, ic) {
+            if self.term_is_kind(b, NamedOWLEntityKind::Datatype, ic) {
                 Some(NamedOWLEntityKind::Datatype)
             } else {
                 Some(NamedOWLEntityKind::Class)
@@ -3726,8 +3723,8 @@ mod test {
     /// https://github.com/phillord/horned-owl/issues/339
     /// https://github.com/phillord/horned-owl/issues/324
     ///
-    /// An undeclared subject of owl:equivalentClass is an error, but
-    /// lax mode takes it to be a class as it does for rdfs:subClassOf.
+    /// An undeclared subject of owl:equivalentClass is taken to be a
+    /// class, as it is for rdfs:subClassOf.
     #[test]
     fn equivalent_class_of_undeclared_subject() {
         for equivalent in [
@@ -3737,10 +3734,10 @@ mod test {
         ] {
             let text = format!("{PUN_HEAD}{equivalent}\n");
 
-            assert!(read_ttl(&text, false).is_err(), "{text}");
-
-            let ont: RcComponentMappedOntology = read_ttl(&text, true).unwrap().into();
-            assert_eq!(ont.i().equivalent_class().count(), 1, "{text}");
+            for lax in [false, true] {
+                let ont: RcComponentMappedOntology = read_ttl(&text, lax).unwrap().into();
+                assert_eq!(ont.i().equivalent_class().count(), 1, "{text}");
+            }
         }
     }
 
